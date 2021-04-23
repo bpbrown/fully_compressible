@@ -1,0 +1,150 @@
+\documentclass{aastex62}
+
+\usepackage{amsthm, amsmath, amssymb}
+\usepackage{latexsym,graphicx,rotating,amsmath, epsfig, natbib, graphbox}
+
+\newcommand{\sol}{\odot}
+\newcommand{\del}{\nabla}
+\newcommand{\cross}{\times}
+\newcommand{\avg}{\bar}
+\renewcommand{\vec}{\boldsymbol}
+\newcommand{\pomega}{\varpi}
+\newcommand{\conv}{\boldsymbol}
+
+\newcommand{\scrD}{\mathcal{D}}
+\newcommand{\scrH}{\mathcal{H}}
+\newcommand{\scrR}{\mathcal{R}}
+\newcommand{\scrL}{\mathcal{L}}
+\newcommand{\scrS}{\mathcal{S}}
+
+\newcommand{\Ra}{\mathrm{Ra}}
+\newcommand{\Ek}{\mathrm{Ek}}
+\renewcommand{\Pr}{\mathrm{Pr}}
+\newcommand{\Pm}{\mathrm{Pm}}
+\newcommand{\RoCsq}{\mathrm{Ro}_\mathrm{C}^2}
+\newcommand{\RoC}{\mathrm{Ro}_\mathrm{C}}
+
+\newcommand{\dedalus}{\href{http://dedalus-project.org/}{Dedalus}}
+
+% \watermark{text}
+\begin{document}
+\section{Basic equations}
+From Geoff Vasil's "gauged" document, the fully compressible equations are:
+\begin{equation}
+  \partial_t \ln \rho + \scrD_1 \cdot \vec{u} = 0
+\end{equation}
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \vec{u} + \del (h + \phi) = T\del s + \vec{\scrD}_1\cdot(\nu E)
+\end{equation}
+\begin{equation}
+  \partial_t s + \vec{u}\cdot \del s = \frac{1}{T}\left[\vec{\scrD}_1 (\chi \del h) + \frac{\nu}{2}\mathrm{Tr}(E^2)\right]
+\end{equation}
+with
+\begin{equation}
+  T = \frac{h}{c_P}, \quad E = \del \vec{u} + (\del \vec{u})^\mathrm{T} - \frac{2}{3}(\del\cdot\vec{u})\mathrm{I},
+\end{equation}
+where
+\begin{equation}
+  \vec{\scrD}_g = \del + g \del \ln \rho,
+\end{equation}
+and linked by an ideal gas equation of state:
+\begin{equation}
+  \frac{\gamma}{\gamma-1} \frac{s}{c_P} - \frac{1}{\gamma - 1}\ln h + \ln \rho =0
+\end{equation}
+
+\subsection{Enthalpy all the time}
+The first step is to rewrite the entropy equation to be entirely in terms of enthalphy; the diffusive term suggests a log enthalphy form:
+\begin{equation}
+  \frac{1}{h} \vec{\scrD}_1 \cdot (\chi \del h) =
+  \del\cdot(\chi \ln h) + \chi (\del \ln h)^2 + \chi \ln \rho \cdot \ln h
+  = \vec{\scrD}_1 \cdot (\chi \ln h) + \chi (\del \ln h)^2
+\end{equation}
+and
+\begin{equation}
+\frac{1}{c_P}\left(\partial_t s + \vec{u}\cdot \del s\right) = \vec{\scrD}_1 \cdot (\chi \ln h) + \chi (\del \ln h)^2 + \exp{(-\ln h)}\frac{\nu}{2}\mathrm{Tr}(E^2).
+\end{equation}
+We might be alarmed at trading a $1/T$ for a $\exp{(-\ln h)}$, but we shouldn't be: $1/T$ is already a band-unlimited nonlinear term, and $\mathrm{Tr}(E^2)$ is always going to be on the RHS.
+
+The momentum equation takes this form:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \vec{u} + \del (\exp{(\ln h)} + \phi) = \frac{1}{c_P}\exp{(\ln h)}\del s + \vec{\scrD}_1\cdot(\nu E),
+\end{equation}
+so clearly we're going to have to be a bit careful with our now nonlinear pressure gradient term (buoyancy has also changed from a quadratic nonlinearity to a band-unlimited nonlinearity).  To make progress, let's consider equilibria.
+
+\subsection{Some kind of equilibrium}
+Let's now assert a base state, assuming hydrostatic equilibrium and an adiabatic profile.  This differs from assuming thermal equilibrium.
+Let:
+\begin{equation}
+  \del s_0 = 0
+\end{equation}
+and
+\begin{equation}
+  \del(\exp{\ln h_0} + \phi) = 0
+\end{equation}
+this means:
+\begin{equation}
+  \exp{\ln h_0} + \phi = h_0 + \phi = \scrH
+\end{equation}
+for some guage constant $\scrH$.
+
+The lack of thermal equilibrium implies a constant heating source Q:
+\begin{equation}
+  Q = \vec{\scrD}_1 \cdot (\chi \ln h_0) + \chi (\del \ln h_0)^2
+\end{equation}
+
+The equation set becomes:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \vec{u} + \del (h_0\left[\exp{(\ln h_1)}-1\right]) = \frac{1}{c_P}h_0(\exp{(\ln h_1)})\del s_1 + \vec{\scrD}_1\cdot(\nu E),
+\end{equation}
+or
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \vec{u} + \del (h_0 \ln h_1) - \frac{1}{c_P}h_0 \del s_1 = -\del (h_0\left[\exp{(\ln h_1)}-1-\ln h_1 \right]) + \frac{1}{c_P}h_0(\exp{(\ln h_1)} - 1)\del s_1 + \vec{\scrD}_1\cdot(\nu E),
+\end{equation}
+where we have de-stiffened both the nonlinear pressure gradient term and the nonlinear buoyancy term.
+The viscous term is:
+\begin{equation}
+  \vec{\scrD}_1\cdot(\nu E) = (\del + \del \ln \rho_0 + \del \ln \rho_1) \cdot(\nu E)
+\end{equation}
+so:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \vec{u} + \del (h_0 \ln h_1) - \frac{1}{c_P}h_0 \del s_1 - \vec{\scrD}_{1,0} \cdot(\nu E) = -\del (h_0\left[\exp{(\ln h_1)}-1-\ln h_1 \right]) + \frac{1}{c_P}h_0(\exp{(\ln h_1)} - 1)\del s_1 + \del \ln \rho_1\cdot(\nu E),
+\end{equation}
+We need some better notation.  Let $\Theta = \ln h$ and $\Upsilon = \ln \rho$.
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \vec{u} + \del (h_0 \Theta_1) - \frac{1}{c_P}h_0 \del s_1 - \vec{\scrD}_{1,0} \cdot(\nu E) = -\del (h_0\left[\exp{\Theta_1}-1-\Theta_1 \right]) + \frac{1}{c_P}h_0(\exp{\Theta_1} - 1)\del s_1 + \del \Upsilon_1\cdot(\nu E),
+\end{equation}
+
+For the entropy equation, we need to decompose the RHS:
+\begin{align}
+\vec{\scrD}_1 \cdot (\chi \Theta) + \chi (\del \Theta)^2 &=
+\vec{\scrD}_1 \cdot (\chi \Theta_0) + \chi (\del \Theta_0)^2
++ \vec{\scrD}_1 \cdot (\chi \Theta_1) + \chi (\del \Theta_1)^2
++ 2 \chi (\del \Theta_0\cdot \del \Theta_1) \\
+& = \vec{\scrD}_{1,0} \cdot (\chi \Theta_0) + \chi (\del \Theta_0)^2 \\
+& \phantom{=} + \del \Upsilon_1 \cdot(\chi \Theta_0)
++ \vec{\scrD}_{1,0} \cdot (\chi \Theta_1) \\
+& \phantom{=} + \del \Upsilon_1 \cdot(\chi \Theta_1)+ \chi (\del \Theta_1)^2
+ + 2 \chi (\del \Theta_0\cdot \del \Theta_1) \\
+& = Q + \del \Upsilon_1 \cdot(\chi \Theta_1)+ \chi (\del \Theta_1)^2
++ 2 \chi (\del \Theta_0\cdot \del \Theta_1) \\
+& \phantom{=} + \del \Upsilon_1 \cdot(\chi \Theta_0)
++ \vec{\scrD}_{1,0} \cdot (\chi \Theta_1)
+\end{align}
+the entropy equation is:
+\begin{equation}
+\frac{1}{c_P}\left(\partial_t s_1 + \vec{u}\cdot \del s_1\right) =
+Q +
+ \vec{\scrD}_1 \cdot (\chi \ln h) + \chi (\del \ln h)^2 + \exp{(-\ln h)}\frac{\nu}{2}\mathrm{Tr}(E^2).
+\end{equation}
+
+Our variables are now:
+\begin{equation}
+\ln h = \ln h_0 + \ln h_1, \quad ln \rho = \ln \rho_0 + \ln \rho_1, \quad s = s_0 + s_1.
+\end{equation}
+
+Thermal equilibrium means:
+
+
+
+
+\end{document}
