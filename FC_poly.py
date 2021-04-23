@@ -154,14 +154,18 @@ P = 0.01
 
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
-problem = problems.IVP([lnρ, u, T, τu1, τu2, τT1, τT2])
-problem.add_equation(eq_eval("dt(lnρ) + div(u) + dot(u, grad(lnρ0)) - P1*dot(ez,τu2) = -dot(u, grad(lnρ))"))
-problem.add_equation(eq_eval("ε*dt(u) + grad(T) + T*grad(lnρ0) + T0*grad(lnρ) - ρ0_inv*ε*P*Pr*viscous_terms - P1*τu1 - P2*τu2 = - ε*dot(u,grad(u)) - T*grad(lnρ) + ρ0_inv*ε*P*Pr*(exp(-lnρ)-1)*viscous_terms"))
-problem.add_equation(eq_eval("dt(T) + dot(u,grad(T0)) + (γ-1)*T0*div(u) - ρ0_inv*γ*P*lap(T) + P1*τT1 + P2*τT2 = - dot(u,grad(T)) - (γ-1)*T*div(u) + ρ0_inv*γ*P*(exp(-lnρ)-1)*lap(T)"))
-problem.add_equation(eq_eval("T(z=0) = 0"))
-problem.add_equation(eq_eval("u(z=0) = 0"))
-problem.add_equation(eq_eval("T(z=Lz) = 0"))
-problem.add_equation(eq_eval("u(z=Lz) = 0"))
+# Υ = ln(ρ), θ = ln(h)
+problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τT1, τT2])
+problem.add_equation((dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2), -dot(u, grad(Υ))))
+problem.add_equation((dt(u) + grad(h0*θ) - h0/cP*grad(s) - ρ0_inv*viscous_terms - P1*τu1 - P2*τu2,
+                      -dot(u,grad(u)) + h0/cP*(exp(θ)-1)*grad(s) + ρ0_inv*(exp(-Υ)-1)*viscous_terms))
+problem.add_equation((dt(s) - cP*() + P1*τT1 + P2*τT2,
+                      -dot(u,grad(T)) - (γ-1)*T*div(u) + ρ0_inv*γ*P*(exp(-lnρ)-1)*lap(T)))
+problem.add_equation((θ - (γ-1)*Υ - γ*s/cP, 0) #EOS
+problem.add_equation((T(z=0), 0))
+problem.add_equation((u(z=0), 0))
+problem.add_equation((T(z=Lz), 0))
+problem.add_equation((u(z=Lz), 0))
 print("Problem built")
 
 solver = solvers.InitialValueSolver(problem, de.timesteppers.RK222)
