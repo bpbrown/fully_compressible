@@ -7,6 +7,7 @@ Usage:
 Options:
     --n_rho=<n_rho>                      Density scale heights across unstable layer [default: 3]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 1e-4]
+    --m=<m>                              Polytopic index m; optional (defaults to 1/(gamma-1)-epsilon if not specified)
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
@@ -36,6 +37,12 @@ nz = int(args['--nz'])
 
 γ  = float(Fraction(args['--gamma']))
 
+if args['--m']:
+    m = float(args['--m'])
+else:
+    m = 1/(γ-1) - float(args['--epsilon'])
+logger.info("m = {:}".format(m))
+
 # wrong height
 Lz = 1
 
@@ -64,7 +71,7 @@ if rank == 0:
     P1['c'][-1] = 1
 
 grad_φ = 0.775
-m = 1
+
 HS_problem = problems.NLBVP([Υ, θ, S, τθ])
 HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 , -1*exp(-θ)*grad_φ*ez))
 HS_problem.add_equation((Υ - m*θ, 0))
@@ -98,14 +105,17 @@ ax2 = ax.twinx()
 θ.require_scales(dealias)
 ax.plot(z, θ['g'], color='black')
 ax.plot(z, Υ['g'], linestyle='dashed', color='black')
+ax.plot(z, S['g'], color='darkgrey')
 ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted', color='black')
 while err > tolerance:
     solver.newton_iteration()
     err = error(solver.perturbations)
     logger.info("current error {:}".format(err))
-    Υ.require_scales(dealias)
+    for f in [Υ, θ, S]:
+        f.require_scales(dealias)
     ax.plot(z, θ['g'])
     ax.plot(z, Υ['g'], linestyle='dashed')
+    ax.plot(z, S['g'], color='darkgrey')
     ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted')
 fig.savefig("hs_balance.png", dpi=300)
 print("density contrast nρ = {:.3g}".format(Υ['g'][-1]))
