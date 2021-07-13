@@ -95,10 +95,10 @@ if IC == 'isothermal':
     logger.info("using isothermal initial guess")
     θ['g'] = 0
 else:
-    # near polytrope ICs
-    logger.info("using near polytrope initial guess")
-    θ['g'] = np.log(1-0.9*z)
-    Υ['g'] = 1.5*θ['g']
+    # adiabatic polytrope ICs
+    logger.info("using adiabatic near-polytrope initial guess")
+    θ['g'] = np.log(1-0.5*z)
+    Υ['g'] = 1/(γ-1)*θ['g']
     S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 
 fig, ax = plt.subplots()
