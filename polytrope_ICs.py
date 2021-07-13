@@ -10,6 +10,7 @@ Options:
     --m=<m>                              Polytopic index m; optional (defaults to 1/(gamma-1)-epsilon if not specified)
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
 
+    --L=<L>                              Domain size in Hρ units at base of zone [default: 1]
     --IC=<IC>                            Initial guess [default: isothermal]
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
     --iter=<iter>                        maximum iterations [default: 20]
@@ -45,8 +46,7 @@ else:
     m = 1/(γ-1) - float(args['--epsilon'])
 logger.info("m = {:}".format(m))
 
-# wrong height
-Lz = 1
+Lz = float(args['--L'])
 
 dealias = 2
 c = de.coords.CartesianCoordinates('z')
@@ -72,7 +72,7 @@ P1 = de.field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
 if rank == 0:
     P1['c'][-1] = 1
 
-grad_φ = 0.8 #0.775 #0.9 #works for some m when near-polytropic ICs are used
+grad_φ = (γ-1)/γ  # if L = (RT/g)(z=0) = Hρ(z=0) for an equivalent isothermal atmosphere, then grad_φ = 1/Cp
 
 HS_problem = problems.NLBVP([Υ, θ, S, τθ])
 HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 , -1*exp(-θ)*grad_φ*ez))
