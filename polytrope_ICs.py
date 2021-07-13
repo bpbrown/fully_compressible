@@ -10,7 +10,9 @@ Options:
     --m=<m>                              Polytopic index m; optional (defaults to 1/(gamma-1)-epsilon if not specified)
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
 
+    --IC=<IC>                            Initial guess [default: isothermal]
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
+    --iter=<iter>                        maximum iterations [default: 20]
 """
 
 import numpy as np
@@ -70,7 +72,7 @@ P1 = de.field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
 if rank == 0:
     P1['c'][-1] = 1
 
-grad_φ = 0.775
+grad_φ = 0.8 #0.775 #0.9 #works for some m when near-polytropic ICs are used
 
 HS_problem = problems.NLBVP([Υ, θ, S, τθ])
 HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 , -1*exp(-θ)*grad_φ*ez))
@@ -87,12 +89,17 @@ solver = solvers.NonlinearBoundaryValueSolver(HS_problem, ncc_cutoff=ncc_cutoff)
 # Initial guess
 for f in [Υ, θ, S]:
     f.require_scales(dealias)
-# isothermal ICs
-θ['g'] = 0
-# near polytrope ICs
-#θ['g'] = np.log(1-0.9*z)
-#Υ['g'] = m*θ['g']
-#S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
+IC = args['--IC']
+if IC == 'isothermal':
+    # isothermal ICs
+    logger.info("using isothermal initial guess")
+    θ['g'] = 0
+else:
+    # near polytrope ICs
+    logger.info("using near polytrope initial guess")
+    θ['g'] = np.log(1-0.9*z)
+    Υ['g'] = 1.5*θ['g']
+    S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 
 fig, ax = plt.subplots()
 
@@ -107,10 +114,10 @@ ax.plot(z, θ['g'], color='black')
 ax.plot(z, Υ['g'], linestyle='dashed', color='black')
 ax.plot(z, S['g'], color='darkgrey')
 ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted', color='black')
-while err > tolerance:
+while err > tolerance and np.max(np.abs(τθ['g'])) < 1 and solver.iteration < int(float(args['--iter'])):
     solver.newton_iteration()
     err = error(solver.perturbations)
-    logger.info("current error {:}".format(err))
+    logger.info("current error {:.3g}, and |τ| {:.3g}".format(err, np.max(np.abs(τθ['g']))))
     for f in [Υ, θ, S]:
         f.require_scales(dealias)
     ax.plot(z, θ['g'])
