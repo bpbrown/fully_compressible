@@ -10,6 +10,8 @@ Options:
     --m=<m>                              Polytopic index m; optional (defaults to 1/(gamma-1)-epsilon if not specified)
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
 
+    --use_h_scaleheight
+
     --nh=nh                              Number of enthalpy scale heights; supersedes L [default: 2]
     --L=<L>                              Domain size in Hρ units at base of zone [default: 1]
 
@@ -37,6 +39,9 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 
 import logging
 logger = logging.getLogger(__name__)
+for sysname in ['subsystems', 'matplotlib']:
+    dlog = logging.getLogger(sysname)
+    dlog.setLevel(logging.WARNING)
 
 #Resolution
 nz = int(args['--nz'])
@@ -51,22 +56,30 @@ logger.info("m = {:}".format(m))
 
 Lz = float(args['--L'])
 norm_top = args['--top']
+
+if args['--use_h_scaleheight']:
+    grad_φ = 1  # if L = (h/g)(z=0) = Hh(z=0) for an equivalent isothermal atmosphere, then grad_φ = 1
+    h_slope = (γ/(γ-1))/(m+1)
+else:
+    grad_φ = (γ-1)/γ  # if L = (RT/g)(z=0) = Hρ(z=0) for an equivalent isothermal atmosphere, then grad_φ = 1/Cp
+    h_slope = 1/(m+1)
+
 if args['--nh']:
     nh = float(args['--nh'])
     if norm_top:
-        Lz = (m+1)*(np.exp(nh)-1)
+        Lz = 1/h_slope*(np.exp(nh)-1)
     else:
-        Lz = (m+1)*(1-np.exp(-nh))
+        Lz = 1/h_slope*(1-np.exp(-nh))
     logger.info("to hit nh = {:.2g}, using Lz = {:.5g}".format(nh, Lz))
-print("predicted enthalpy slope: {:}".format(-1/(1+m)))
+print("predicted enthalpy slope: {:}".format(-h_slope))
 if norm_top:
-    h_bot = 1+Lz/(m+1)
+    h_bot = 1+Lz*h_slope
 else:
     h_bot = 1
-h_top = h_bot - Lz/(m+1)
+h_top = h_bot - Lz*h_slope
 print("predicted enthalpy bot,top: {:.2g}, {:.2g}".format(h_bot,h_top))
 print("predicted nh: {:.2g}".format(np.log(h_bot)-np.log(h_top)))
-print("predicted nρ: {:.2g}".format(m*np.log(h_bot)-np.log(h_top)))
+print("predicted nρ: {:.2g}".format(m*(np.log(h_bot)-np.log(h_top))))
 if h_top <= 0:
     logger.warning("h_top <= 0 (h_top = {:.2g})".format(h_top))
 
@@ -94,8 +107,6 @@ P1 = de.field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
 if rank == 0:
     P1['c'][-1] = 1
 
-grad_φ = (γ-1)/γ  # if L = (RT/g)(z=0) = Hρ(z=0) for an equivalent isothermal atmosphere, then grad_φ = 1/Cp
-
 HS_problem = problems.NLBVP([Υ, θ, S, τθ])
 HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 , -1*exp(-θ)*grad_φ*ez))
 HS_problem.add_equation((Υ - m*θ, 0))
@@ -121,13 +132,13 @@ if IC == 'isothermal':
 elif IC == 'exact':
     # adiabatic polytrope ICs
     logger.info("using exact polytrope initial guess")
-    θ['g'] = np.log(h_bot-1/(m+1)*z)
+    θ['g'] = np.log(h_bot-h_slope*z)
     Υ['g'] = m*θ['g']
     S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 else:
     # adiabatic polytrope ICs
     logger.info("using adiabatic near-polytrope initial guess")
-    θ['g'] = np.log(h_bot-1/(m+1)*z)
+    θ['g'] = np.log(h_bot-h_slope*z)
     Υ['g'] = 1/(γ-1)*θ['g']
     S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 
@@ -155,7 +166,7 @@ while err > tolerance and np.max(np.abs(τθ['g'])) < 1 and solver.iteration < i
     ax.plot(z, S['g'], color='darkgrey')
     ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted')
 fig.savefig("hs_balance.png", dpi=300)
-print("density  contrast nρ = {:.3g}".format(Υ['g'][0]-Υ['g'][-1]))
-print("enthalpy contrast nh = {:.3g}".format(θ['g'][0]-θ['g'][-1]))
 print("enthalpy slope = {:.3g}".format(grad(exp(θ)).evaluate()['g'][0][-1]))
+print("enthalpy contrast nh = {:.3g}".format(θ['g'][0]-θ['g'][-1]))
+print("density  contrast nρ = {:.3g}".format(Υ['g'][0]-Υ['g'][-1]))
 print("departure from thermal eq: {:.3g}".format(np.max(np.abs(lap(θ)+dot(grad(θ), grad(θ))).evaluate()['g'])))
