@@ -2,6 +2,7 @@
 
 \usepackage{amsthm, amsmath, amssymb}
 \usepackage{latexsym,graphicx,rotating,amsmath, epsfig, natbib, graphbox}
+\usepackage{listings}
 
 \newcommand{\sol}{\odot}
 \newcommand{\del}{\nabla}
@@ -65,11 +66,84 @@ and
 \end{equation}
 We might be alarmed at trading a $1/T$ for a $\exp{(-\ln h)}$, but we shouldn't be: $1/T$ is already a band-unlimited nonlinear term, and $\mathrm{Tr}(E^2)$ is always going to be on the RHS.
 
+The form above is best if $\chi$ is constant in time.  If we instead take $\kappa$ to be constant in space and time, then the diffusive term is:
+\begin{align}
+  \frac{1}{\rho T}\del\cdot\kappa \del T &= \frac{\kappa}{\rho}\frac{1}{T}\del\cdot\del T = \frac{\kappa}{\rho}\left[\nabla^2 \ln T + \left(\nabla \ln T\right)^2\right] \\
+  &=
+  \frac{\kappa}{\rho}\left[\nabla^2 \ln h + \left(\nabla \ln h\right)^2\right]
+\end{align}
+or, taking $\mu = \nu \rho$:
+\begin{equation}
+  \left(\partial_t \frac{s}{c_P} + \vec{u}\cdot \del \frac{s}{c_P}\right) = \frac{\kappa}{\rho}\left[\nabla^2 \ln h + \left(\nabla \ln h\right)^2\right] + \exp{(-\ln h)}\exp{(-\ln \rho)}\frac{\mu}{2}\mathrm{Tr}(E^2),
+\end{equation}
+which now has two exponentials in the viscous heating term, but again that term is always going to be RHS anyways.  We've also collected the s and $c_P$ terms together.
+
 The momentum equation takes this form:
 \begin{equation}
-  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del (\exp{(\ln h)} + \phi) = \frac{1}{c_P}\exp{(\ln h)}\del s + \vec{\scrD}_1\cdot(\nu E),
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del (\exp{(\ln h)} + \phi) = \exp{(\ln h)}\frac{\del s}{c_P} + \vec{\scrD}_1\cdot(\nu E),
 \end{equation}
-so clearly we're going to have to be a bit careful with our now nonlinear pressure gradient term (buoyancy has also changed from a quadratic nonlinearity to a band-unlimited nonlinearity).  To make progress, let's consider equilibria.
+or
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del (\exp{(\ln h)} + \phi) = \exp{(\ln h)}\frac{\del s}{c_P} + \exp{-\ln\rho}\mu \del\cdot(E),
+\end{equation}
+for constant $\mu$.
+Clearly we're going to have to be a bit careful with our now nonlinear pressure gradient term (buoyancy has also changed from a quadratic nonlinearity to a band-unlimited nonlinearity).  To make progress, let's consider equilibria.
+
+\subsection{Hydrostatic equilibrium in a polytrope}
+If we assert hydrostatic equilbrium, we have:
+\begin{equation}
+  \del (h + \phi) = h\frac{\del s}{c_P}
+\end{equation}
+or
+\begin{equation}
+  \del \ln h  - \frac{\del s}{c_P} = - \frac{\del \phi}{h}
+\end{equation}
+For an ideal gas we take
+\begin{equation}
+  \frac{\del s}{c_P} = \frac{1}{\gamma}\del \ln h - \frac{\gamma-1}{\gamma}\del \ln \rho
+\end{equation}
+and for a polytrope, we take
+\begin{equation}
+  \ln \rho = m \ln h
+\end{equation}
+in place of the thermal equation.
+
+If we take $L = R T_c/\phi_c$, or the density scale height of the equivalent isothermal atmosphere at the characteristic level (say the bottom of the atmosphere), take constant gravity, and take $s_c = c_P$, then we get this non-dimensional form:
+\begin{equation}
+  \del \ln h  - \del s = - \frac{\gamma-1}{\gamma}\exp{-\ln h} \vec{\hat{z}}
+\end{equation}
+where the $c_P$ in the enthalpy has been factored to pull out the $R$ separately from the $(\gamma-1)/\gamma$
+
+You know, I don't think there is actually an lengthscale information here.  What we have is $R T_c/\phi_c = 1$, because if L is the characteristic lengthscale for $\del \phi$, then the L's cancel out.  Does that somehow imply that $L=H_\rho$?  Alternatively, the correct scale is $\del \phi = \vec{g}$ and then we have a lengthscale $ L = R T_c/g_c = H_\rho$.  Very confusing.
+
+I wonder also if there's anything in this ratio:
+\begin{equation}
+  \frac{\phi_c}{h_c}~\text{or}~L=\frac{g}{h_c}
+\end{equation}
+I guess that's an adiabatic enthalphy scale height?
+(based on:)
+\begin{equation}
+  \del \ln h = - \frac{\del \phi}{h}, \quad \del s = 0.
+\end{equation}
+For now we stick to a density scaleheight system, just because.
+
+Here's some code that solves this above problem:
+\lstset{language=Python,
+  frame=lines,
+  inputencoding=utf8,
+  extendedchars=true,
+  literate={Υ}{{$\Gamma$}}1 {θ}{{$\theta$}}1 {τ}{{$\tau$}},
+  }
+\begin{lstlisting}
+HS_problem = problems.NLBVP([Υ, θ, S, τθ])
+HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 ,
+                         -1*exp(-θ)*grad_φ*ez))
+HS_problem.add_equation((Υ - m*θ, 0))
+HS_problem.add_equation((S - 1/γ*θ+(γ-1)/γ*Υ, 0))
+HS_problem.add_equation((θ(z=0),0))
+\end{lstlisting}
+
+\section{Here we try and adiabatic state}
 
 \subsection{Some kind of equilibrium}
 Let's now assert a base state, assuming hydrostatic equilibrium and an adiabatic profile.  This differs from assuming thermal equilibrium.
@@ -115,6 +189,8 @@ with $h_0$ now scaled to some reference value.
 
 \emph{A note on computation:} the $\left(\exp{(\ln h_1)}-1\right)$ term should be computed using \verb+numpy.expm1(x)+ rather than computing \verb+numpy.exp(x)+ and then subtracting 1, especially when $x \sim \mathrm{Ma}^2 \ll 1$ (numerical convergence issues).
 
+\textbf{To do: add np.expm1 to the UnaryGridFunction list.}
+
 There's one more trick that's likely useful for low-Mach settings:
 \begin{equation}
   \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0 \ln h_1 \right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s -
@@ -126,6 +202,14 @@ or
   \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\mathrm{expm1}{(\ln h_1)}-\ln h_1\right)\right] + \vec{\scrD}_1\cdot(\nu E),
 \end{equation}
 where we've just shifted a likely wave-like linear term to the LHS.  Not clear there is a similar one in the quadratic thermal nonlinearity, but that's also because we assumed $\del s_0 = 0$, and there are no gravity waves in that basic state (just acoustic).  That's actually very interesting.
+
+\subsection{Making a super-adiabatic atmosphere}
+If the zero state has $\del s_0 = 0$, then the superadiabaticity must be in the initial conditions.  Here's what that looks like.
+
+The hydrostatically balanced temperature profile is:
+\begin{equation}
+  T = \frac{g}{c_P} \ldots
+\end{equation}
 
 \subsection{Thermal considerations}
 
