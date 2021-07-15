@@ -6,7 +6,7 @@ Usage:
 
 Options:
     --n_rho=<n_rho>                      Density scale heights across unstable layer [default: 3]
-    --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 1e-4]
+    --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0]
     --m=<m>                              Polytopic index m; optional (defaults to 1/(gamma-1)-epsilon if not specified)
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
 
@@ -48,6 +48,11 @@ logger.info("m = {:}".format(m))
 
 Lz = float(args['--L'])
 
+print("predicted enthalpy slope: {:}".format(-1/(1+m)))
+print("predicted enthalpy top: {:}".format(1-1/(1+m)*Lz))
+print("predicted nh: {:}".format(np.log(1-1/(1+m)*Lz)))
+print("predicted nρ: {:}".format(m*np.log(1-1/(1+m)*Lz)))
+
 dealias = 2
 c = de.coords.CartesianCoordinates('z')
 d = de.distributor.Distributor((c,))
@@ -77,11 +82,10 @@ grad_φ = (γ-1)/γ  # if L = (RT/g)(z=0) = Hρ(z=0) for an equivalent isotherma
 HS_problem = problems.NLBVP([Υ, θ, S, τθ])
 HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 , -1*exp(-θ)*grad_φ*ez))
 HS_problem.add_equation((Υ - m*θ, 0))
-HS_problem.add_equation((S - 1/γ*θ+(γ-1)/γ*Υ, 0))
+HS_problem.add_equation((S - (1/γ*θ - (γ-1)/γ*Υ), 0))
 HS_problem.add_equation((θ(z=0),0))
 
-print("Problem built")
-ncc_cutoff = 1e-8
+ncc_cutoff = 1e-14
 tolerance = 1e-8
 
 solver = solvers.NonlinearBoundaryValueSolver(HS_problem, ncc_cutoff=ncc_cutoff)
@@ -94,10 +98,16 @@ if IC == 'isothermal':
     # isothermal ICs
     logger.info("using isothermal initial guess")
     θ['g'] = 0
+elif IC == 'exact':
+    # adiabatic polytrope ICs
+    logger.info("using exact polytrope initial guess")
+    θ['g'] = np.log(1-1/(m+1)*z/Lz)
+    Υ['g'] = m*θ['g']
+    S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 else:
     # adiabatic polytrope ICs
     logger.info("using adiabatic near-polytrope initial guess")
-    θ['g'] = np.log(1-0.5*z)
+    θ['g'] = np.log(1-0.9*z/Lz)
     Υ['g'] = 1/(γ-1)*θ['g']
     S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 
@@ -110,10 +120,10 @@ err = np.inf
 ax2 = ax.twinx()
 
 θ.require_scales(dealias)
-ax.plot(z, θ['g'], color='black')
-ax.plot(z, Υ['g'], linestyle='dashed', color='black')
-ax.plot(z, S['g'], color='darkgrey')
-ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted', color='black')
+#ax.plot(z, θ['g'], color='black')
+#ax.plot(z, Υ['g'], linestyle='dashed', color='black')
+#ax.plot(z, S['g'], color='darkgrey')
+#ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted', color='black')
 while err > tolerance and np.max(np.abs(τθ['g'])) < 1 and solver.iteration < int(float(args['--iter'])):
     solver.newton_iteration()
     err = error(solver.perturbations)
@@ -125,5 +135,7 @@ while err > tolerance and np.max(np.abs(τθ['g'])) < 1 and solver.iteration < i
     ax.plot(z, S['g'], color='darkgrey')
     ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted')
 fig.savefig("hs_balance.png", dpi=300)
-print("density contrast nρ = {:.3g}".format(Υ['g'][-1]))
+print("density contrast nρ  = {:.3g}".format(Υ['g'][-1]))
+print("enthalpy contrast nh = {:.3g}".format(θ['g'][-1]))
+print("enthalpy slope = {:.3g}".format(grad(exp(θ)).evaluate()['g'][0][-1]))
 print("departure from thermal eq: {:.3g}".format(np.max(np.abs(lap(θ)+dot(grad(θ), grad(θ))).evaluate()['g'])))
