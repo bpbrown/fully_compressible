@@ -10,7 +10,10 @@ Options:
     --m=<m>                              Polytopic index m; optional (defaults to 1/(gamma-1)-epsilon if not specified)
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
 
+    --nh=nh                              Number of enthalpy scale heights; supersedes L [default: 2]
     --L=<L>                              Domain size in Hρ units at base of zone [default: 1]
+
+    --top                                Normalize from the top of the domain
     --IC=<IC>                            Initial guess [default: isothermal]
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
     --iter=<iter>                        maximum iterations [default: 20]
@@ -47,11 +50,25 @@ else:
 logger.info("m = {:}".format(m))
 
 Lz = float(args['--L'])
-
+norm_top = args['--top']
+if args['--nh']:
+    nh = float(args['--nh'])
+    if norm_top:
+        Lz = (m+1)*(np.exp(nh)-1)
+    else:
+        Lz = (m+1)*(1-np.exp(-nh))
+    logger.info("to hit nh = {:.2g}, using Lz = {:.5g}".format(nh, Lz))
 print("predicted enthalpy slope: {:}".format(-1/(1+m)))
-print("predicted enthalpy top: {:}".format(1-1/(1+m)*Lz))
-print("predicted nh: {:}".format(np.log(1-1/(1+m)*Lz)))
-print("predicted nρ: {:}".format(m*np.log(1-1/(1+m)*Lz)))
+if norm_top:
+    h_bot = 1+Lz/(m+1)
+else:
+    h_bot = 1
+h_top = h_bot - Lz/(m+1)
+print("predicted enthalpy bot,top: {:.2g}, {:.2g}".format(h_bot,h_top))
+print("predicted nh: {:.2g}".format(np.log(h_bot)-np.log(h_top)))
+print("predicted nρ: {:.2g}".format(m*np.log(h_bot)-np.log(h_top)))
+if h_top <= 0:
+    logger.warning("h_top <= 0 (h_top = {:.2g})".format(h_top))
 
 dealias = 2
 c = de.coords.CartesianCoordinates('z')
@@ -83,7 +100,10 @@ HS_problem = problems.NLBVP([Υ, θ, S, τθ])
 HS_problem.add_equation((grad(θ) - grad(S) + τθ*P1 , -1*exp(-θ)*grad_φ*ez))
 HS_problem.add_equation((Υ - m*θ, 0))
 HS_problem.add_equation((S - (1/γ*θ - (γ-1)/γ*Υ), 0))
-HS_problem.add_equation((θ(z=0),0))
+if norm_top:
+    HS_problem.add_equation((θ(z=Lz),0))
+else:
+    HS_problem.add_equation((θ(z=0),0))
 
 ncc_cutoff = 1e-14
 tolerance = 1e-8
@@ -101,13 +121,13 @@ if IC == 'isothermal':
 elif IC == 'exact':
     # adiabatic polytrope ICs
     logger.info("using exact polytrope initial guess")
-    θ['g'] = np.log(1-1/(m+1)*z/Lz)
+    θ['g'] = np.log(h_bot-1/(m+1)*z)
     Υ['g'] = m*θ['g']
     S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 else:
     # adiabatic polytrope ICs
     logger.info("using adiabatic near-polytrope initial guess")
-    θ['g'] = np.log(1-0.9*z/Lz)
+    θ['g'] = np.log(h_bot-1/(m+1)*z)
     Υ['g'] = 1/(γ-1)*θ['g']
     S['g'] = 1/γ*θ['g']-(γ-1)/γ*Υ['g']
 
@@ -135,7 +155,7 @@ while err > tolerance and np.max(np.abs(τθ['g'])) < 1 and solver.iteration < i
     ax.plot(z, S['g'], color='darkgrey')
     ax2.plot(z, exp(θ).evaluate()['g'], linestyle='dotted')
 fig.savefig("hs_balance.png", dpi=300)
-print("density contrast nρ  = {:.3g}".format(Υ['g'][-1]))
-print("enthalpy contrast nh = {:.3g}".format(θ['g'][-1]))
+print("density  contrast nρ = {:.3g}".format(Υ['g'][0]-Υ['g'][-1]))
+print("enthalpy contrast nh = {:.3g}".format(θ['g'][0]-θ['g'][-1]))
 print("enthalpy slope = {:.3g}".format(grad(exp(θ)).evaluate()['g'][0][-1]))
 print("departure from thermal eq: {:.3g}".format(np.max(np.abs(lap(θ)+dot(grad(θ), grad(θ))).evaluate()['g'])))
