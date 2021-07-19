@@ -25,6 +25,8 @@
 \newcommand{\RoCsq}{\mathrm{Ro}_\mathrm{C}^2}
 \newcommand{\RoC}{\mathrm{Ro}_\mathrm{C}}
 
+\newcommand{\expm}{\mathrm{expm1}}
+
 \newcommand{\dedalus}{\href{http://dedalus-project.org/}{Dedalus}}
 
 \definecolor{codegreen}{rgb}{0,0.6,0}
@@ -210,35 +212,40 @@ or
   \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right] -h_0 \ln h_1 \frac{\del s_0}{c_P} = h_0\exp{(\ln h_1)}\frac{\del s}{c_P} + h_0\left(\exp{(\ln h_1)}-1-\ln h_1\right)\frac{\del s_0}{c_P} + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E),
 \end{equation}
 or, going to $\theta = \ln h_1$ and absorbing $c_P$ into $s$:
-\begin{equation}
-  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del\left[h_0\theta\right] -h_0 \theta \del s_0 = - \del\left[h_0\left(\exp{(\theta)}-1-\theta\right)\right] + h_0\exp{(\theta)}\del s + h_0\left(\exp{(\theta)}-1-\theta\right)\del s_0 + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E),
-\end{equation}
+\begin{multline}
+  \partial_t \vec{u}  + \del\left[h_0\theta\right] - h_0\del s - (h_0 \del s_0) \theta  = \\
+  - \vec{u}\cdot \del\vec{u} - \del\left[h_0\left(\exp{(\theta)}-1-\theta\right)\right] + h_0\left(\exp{(\theta)}-1\right)\del s
+  + h_0\left(\exp{(\theta)}-1-\theta\right)\del s_0 + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E).
+\end{multline}
+We've moved various linear terms to the LHS and subtracted them off the corresponding nonlinearity on the RHS, which may help in stability especially at low Mach numbers.
 
+\subsection{non-dimensional form}
 If we non-dimensionalize on a characteristic velocity $u_c$, then we're seeing the following non-dimensional parameter:
 \begin{equation}
-  \frac{h_0}{u_c^2} = \left(\frac{\gamma}{\gamma-1}\right)\left(\frac{R T}{u_c^2}\right) = \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2
+  \frac{h_c}{u_c^2} =
+  \left(\frac{\gamma}{\gamma-1}\right)\left(\frac{R T}{u_c^2}\right) =
+  \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 =
+  c_P \mathrm{Ma}^2
 \end{equation}
 for an isothermal Mach number $\mathrm{Ma}$.  This suggests:
-\begin{equation}
-  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s + \vec{\scrD}_1\cdot(\nu E),
-\end{equation}
-with $h_0$ now scaled to some reference value.
+\begin{align}
+\partial_t \vec{u} + &c_P \mathrm{Ma}^2 \left(\del\left[h_0\theta\right] -h_0\del s - (h_0 \del s_0) \theta \right)  =
+ -  \vec{u}\cdot \del\vec{u} + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E) \\
+&\phantom{=} - c_P \mathrm{Ma}^2\left(\del\left[h_0\left(\exp{(\theta)}-1-\theta\right)\right] - h_0\left(\exp{(\theta)}-1\right)\del s
+- h_0\left(\exp{(\theta)}-1-\theta\right)\del s_0 \right) \nonumber
+\end{align}
 
 \emph{A note on computation:} the $\left(\exp{(\ln h_1)}-1\right)$ term should be computed using \verb+numpy.expm1(x)+ rather than computing \verb+numpy.exp(x)+ and then subtracting 1, especially when $x \sim \mathrm{Ma}^2 \ll 1$ (numerical convergence issues).
 
 \textbf{To do: add np.expm1 to the UnaryGridFunction list.}
 
-There's one more trick that's likely useful for low-Mach settings:
-\begin{equation}
-  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0 \ln h_1 \right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s -
-  \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\exp{(\ln h_1)}-1-\ln h_1\right)\right] + \vec{\scrD}_1\cdot(\nu E),
-\end{equation}
-or
-\begin{equation}
-  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0 \ln h_1 \right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s -
-  \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\mathrm{expm1}{(\ln h_1)}-\ln h_1\right)\right] + \vec{\scrD}_1\cdot(\nu E),
-\end{equation}
-where we've just shifted a likely wave-like linear term to the LHS.  Not clear there is a similar one in the quadratic thermal nonlinearity, but that's also because we assumed $\del s_0 = 0$, and there are no gravity waves in that basic state (just acoustic).  That's actually very interesting.
+With the $\expm$ operator:
+\begin{align}
+\partial_t \vec{u} + &c_P \mathrm{Ma}^2 \left(\del\left[h_0\theta\right] -h_0\del s - (h_0 \del s_0) \theta \right)  =
+-  \vec{u}\cdot \del\vec{u} + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E) \\
+&\phantom{=} - c_P \mathrm{Ma}^2\left(\del\left[h_0\left(\expm{(\theta)}-\theta\right)\right] - h_0\expm{(\theta)}\del s
+- h_0\left(\expm{(\theta)}-\theta\right)\del s_0 \right) \nonumber
+\end{align}
 
 
 \section{Here we try an adiabatic state}

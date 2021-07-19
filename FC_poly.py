@@ -15,8 +15,6 @@ Options:
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
-    --nh=<nh>                            Enthalpy scale heights to use [default: 2]
-
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
 
@@ -91,6 +89,10 @@ config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
 config['logging']['file_level'] = 'DEBUG'
 import logging
 logger = logging.getLogger(__name__)
+
+logger.info(args)
+logger.info("saving data in: {}".format(data_dir))
+
 with Sync() as sync:
     if sync.comm.rank == 0:
         if not os.path.exists('{:s}/'.format(data_dir)):
@@ -108,7 +110,6 @@ h_slope = -1/(1+m)
 n_h = float(args['--n_h'])
 Lz = -1/h_slope*(1-np.exp(-n_h))
 Lx = float(args['--aspect'])*Lz
-print((nz, Lz), (nx, Lx))
 
 c = de.coords.CartesianCoordinates('x', 'z')
 d = de.distributor.Distributor((c,))
@@ -168,6 +169,10 @@ h0['g'] = h_bot+h_slope*z
 Υ0 = (m*θ0).evaluate()
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
 
+logger.info("h0: {}".format(h0['g']))
+logger.info("θ0 ranges from {}--{}".format(np.min(θ0['g']), np.max(θ0['g'])))
+logger.info("Υ0 ranges from {}--{}".format(np.min(Υ0['g']), np.max(Υ0['g'])))
+logger.info("s0 ranges from {}--{}".format(np.min(s0['g']), np.max(s0['g'])))
 # stress-free bcs
 #u_perp_inner = radial(angular(e(r=r_inner)))
 #u_perp_outer = radial(angular(e(r=r_outer)))
@@ -183,8 +188,10 @@ Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 Ma2 = ε
 Pr = 1
 
-μ = 0.005
+μ = 0.002
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
+
+logger.info("Ra = {:}".format(1/(μ*κ*cP)))
 
 scale = de.field.Field(name='scale', dist=d, bases=(zb,), dtype=np.float64)
 scale['g'] = h0['g']
@@ -194,11 +201,11 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2) ), scale*(-dot(u, grad(Υ)))))
-problem.add_equation((scale*(dt(u) + Ma2*(γ/(γ-1)*grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), scale*(-dot(u, grad(Υ)))))
+problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
                       -μ*exp(-Υ0)*viscous_terms + P1*τu1 + P2*τu2),
-                      scale*(-dot(u,grad(u)) + Ma2*(γ/(γ-1)*-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) \
-                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
+                      scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ))) # \
+#                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2),
                       scale*(-dot(u,grad(s)) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
@@ -218,6 +225,7 @@ noise.require_scales(1)
 amp = 1e-4*Ma2
 s['g'] = amp*noise['g']*np.sin(np.pi*z/Lz)
 Υ['g'] = -γ/(γ-1)*s['g']
+θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
 
 solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
