@@ -117,7 +117,7 @@ in place of the thermal equation.
 
 If we take $L = R T_c/\phi_c$, or the density scale height of the equivalent isothermal atmosphere at the characteristic level (say the bottom of the atmosphere), take constant gravity, and take $s_c = c_P$, then we get this non-dimensional form:
 \begin{equation}
-  \del \ln h  - \del s = - \frac{\gamma-1}{\gamma}\exp{-\ln h} \vec{\hat{z}}
+  \del \ln h  - \del s = - \frac{\gamma-1}{\gamma}\exp{(-\ln h)} \vec{\hat{z}}
 \end{equation}
 where the $c_P$ in the enthalpy has been factored to pull out the $R$ separately from the $(\gamma-1)/\gamma$
 
@@ -154,7 +154,7 @@ Here's some code that solves this above problem:
   tabsize=2,
   inputencoding=utf8,
   extendedchars=true,
-  literate={Υ}{{$\Gamma$}}1 {θ}{{$\theta$}}1 {τ}{{$\tau$}}1 {φ}{{$\phi$}}1 {γ}{{$\gamma$}}1,
+  literate={Υ}{{$\Upsilon$}}1 {θ}{{$\theta$}}1 {τ}{{$\tau$}}1 {φ}{{$\phi$}}1 {γ}{{$\gamma$}}1,
   }
 \begin{lstlisting}
 HS_problem = problems.NLBVP([Υ, θ, S, τθ])
@@ -165,7 +165,83 @@ HS_problem.add_equation((S - 1/γ*θ+(γ-1)/γ*Υ, 0))
 HS_problem.add_equation((θ(z=0),0))
 \end{lstlisting}
 
-\section{Here we try and adiabatic state}
+\subsection{Exact solutions to polytropes}
+The exact solution to a polytrope is:
+\begin{equation}
+  h(z) = h(z=0) + h_z z
+\end{equation}
+where
+\begin{equation}
+  h(z=0) =
+  \begin{cases}
+    1, \text{if}\ z_c=0\\
+    1+L_z h_z, \text{if}\ z_c=L_z
+  \end{cases}
+\end{equation}
+and if $L = (h/g)(z=z_c) = H_h(z=z_c)$:
+\begin{equation}
+\del_\phi = 1 \quad\text{and}\quad
+h_z = -\frac{\gamma}{\gamma-1}\frac{1}{(m+1)}
+\end{equation}
+but if $L = (RT/g)(z=z_c) = H_\rho(z=z_c)$:
+\begin{equation}
+\del_\phi = \frac{(\gamma-1)}{\gamma} \quad\text{and}\quad
+h_z = -\frac{1}{(m+1)}
+\end{equation}
+
+
+\section{A thermal equilibrum state}
+Let's now assert a base state, assuming hydrostatic equilibrium and a thermal equilibrium.
+
+Recognizing that:
+\begin{equation}
+  \exp{(\ln h)} = \exp{(\ln h_0)}\exp{(\ln h_1)} = h_0 \exp{(\ln h_1)}
+\end{equation}
+and that:
+\begin{equation}
+  \del \left[h_0 \exp{(\ln_1)} + \phi\right] = \del \left[h_0 \exp{(\ln_1)-1} +h_0 + \phi\right]=  \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right]
+\end{equation}
+we have:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right] = \frac{h_0}{c_P}\exp{(\ln h_1)}\del s + \frac{h_0}{c_P}\left(\exp{(\ln h_1)}-1\right)\del s_0 + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E),
+\end{equation}
+or
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right] -h_0 \ln h_1 \frac{\del s_0}{c_P} = h_0\exp{(\ln h_1)}\frac{\del s}{c_P} + h_0\left(\exp{(\ln h_1)}-1-\ln h_1\right)\frac{\del s_0}{c_P} + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E),
+\end{equation}
+or, going to $\theta = \ln h_1$ and absorbing $c_P$ into $s$:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del\left[h_0\theta\right] -h_0 \theta \del s_0 = - \del\left[h_0\left(\exp{(\theta)}-1-\theta\right)\right] + h_0\exp{(\theta)}\del s + h_0\left(\exp{(\theta)}-1-\theta\right)\del s_0 + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E),
+\end{equation}
+
+If we non-dimensionalize on a characteristic velocity $u_c$, then we're seeing the following non-dimensional parameter:
+\begin{equation}
+  \frac{h_0}{u_c^2} = \left(\frac{\gamma}{\gamma-1}\right)\left(\frac{R T}{u_c^2}\right) = \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2
+\end{equation}
+for an isothermal Mach number $\mathrm{Ma}$.  This suggests:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s + \vec{\scrD}_1\cdot(\nu E),
+\end{equation}
+with $h_0$ now scaled to some reference value.
+
+\emph{A note on computation:} the $\left(\exp{(\ln h_1)}-1\right)$ term should be computed using \verb+numpy.expm1(x)+ rather than computing \verb+numpy.exp(x)+ and then subtracting 1, especially when $x \sim \mathrm{Ma}^2 \ll 1$ (numerical convergence issues).
+
+\textbf{To do: add np.expm1 to the UnaryGridFunction list.}
+
+There's one more trick that's likely useful for low-Mach settings:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0 \ln h_1 \right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s -
+  \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\exp{(\ln h_1)}-1-\ln h_1\right)\right] + \vec{\scrD}_1\cdot(\nu E),
+\end{equation}
+or
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0 \ln h_1 \right] = \mathrm{Ma}^2 h_0 \exp{(\ln h_1)}\del s -
+  \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 \del\left[h_0\left(\mathrm{expm1}{(\ln h_1)}-\ln h_1\right)\right] + \vec{\scrD}_1\cdot(\nu E),
+\end{equation}
+where we've just shifted a likely wave-like linear term to the LHS.  Not clear there is a similar one in the quadratic thermal nonlinearity, but that's also because we assumed $\del s_0 = 0$, and there are no gravity waves in that basic state (just acoustic).  That's actually very interesting.
+
+
+\section{Here we try an adiabatic state}
 
 \subsection{Some kind of equilibrium}
 Let's now assert a base state, assuming hydrostatic equilibrium and an adiabatic profile.  This differs from assuming thermal equilibrium.
