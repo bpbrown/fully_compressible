@@ -31,6 +31,7 @@ import numpy as np
 import dedalus.public as de
 from dedalus.core import arithmetic, problems, solvers
 from mpi4py import MPI
+from dedalus.tools.parallel import Sync
 import time
 rank = MPI.COMM_WORLD.rank
 
@@ -52,6 +53,14 @@ config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
 config['logging']['file_level'] = 'DEBUG'
 import logging
 logger = logging.getLogger(__name__)
+with Sync() as sync:
+    if sync.comm.rank == 0:
+        if not os.path.exists('{:s}/'.format(data_dir)):
+            os.mkdir('{:s}/'.format(data_dir))
+        logdir = os.path.join(data_dir,'logs')
+        if not os.path.exists(logdir):
+            os.mkdir(logdir)
+
 
 #Resolution
 nz = int(args['--nz'])
@@ -236,14 +245,23 @@ def L_inf(q):
         Q = np.max(np.abs(q['g']))
     return reducer.reduce_scalar(Q, MPI.MAX)
 
+slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=1,max_writes=10)
+slice_output.add_task(s+s0, name='s+s0')
+slice_output.add_task(s, name='s')
+#slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
+
+report_cadence = 10
 print(vol_avg(o))
 good_solution = True
 while solver.ok and good_solution:
     # advance
-    KE_avg = vol_avg(KE.evaluate())
-    IE_avg = vol_avg(IE.evaluate())
     solver.step(Δt)
-    log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
-    log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
-    logger.info(log_string)
+    if solver.iteration % report_cadence == 0:
+        KE_avg = vol_avg(KE.evaluate())
+        IE_avg = vol_avg(IE.evaluate())
+
+        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
+        log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
+        logger.info(log_string)
     Δt = compute_dt(Δt)
+    good_solution = np.isfinite(Δt)
