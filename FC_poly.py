@@ -24,6 +24,8 @@ Options:
     --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
     --run_time_iter=<run_time_iter>      Run time, number of iterations; if not set, n_iter=np.inf
 
+    --ncc_cutoff=<ncc_cutoff>            Amplitude cutoff for NCCs [default: 1e-8]
+
     --label=<label>                      Additional label for run output directory
 """
 
@@ -44,23 +46,8 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 
 import sys
 import os
-data_dir = sys.argv[0].split('.py')[0]
-data_dir += "_nh{}_Ra{}_Pr{}".format(args['--n_h'], args['--Rayleigh'], args['--Prandtl'])
-data_dir += "_eps{}_a{}".format(args['--epsilon'], args['--aspect'])
 
-from dedalus.tools.config import config
-config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
-config['logging']['file_level'] = 'DEBUG'
-import logging
-logger = logging.getLogger(__name__)
-with Sync() as sync:
-    if sync.comm.rank == 0:
-        if not os.path.exists('{:s}/'.format(data_dir)):
-            os.mkdir('{:s}/'.format(data_dir))
-        logdir = os.path.join(data_dir,'logs')
-        if not os.path.exists(logdir):
-            os.mkdir(logdir)
-
+ncc_cutoff = float(args['--ncc_cutoff'])
 
 #Resolution
 nz = int(args['--nz'])
@@ -87,12 +74,32 @@ Pr = Prandtl = float(args['--Prandtl'])
 m_ad = 1/(γ-1)
 if args['--m']:
     m = float(args['--m'])
+    strat_label = '_m{}'.format(args['--m'])
 else:
     m = m_ad - float(args['--epsilon'])
-
+    strat_label = '_eps{}'.format(args['--epsilon'])
 ε = m_ad - m
 
 cP = γ/(γ-1)
+
+data_dir = sys.argv[0].split('.py')[0]
+data_dir += "_nh{}_Ra{}_Pr{}".format(args['--n_h'], args['--Rayleigh'], args['--Prandtl'])
+data_dir += "{}_a{}".format(strat_label, args['--aspect'])
+
+from dedalus.tools.config import config
+config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
+config['logging']['file_level'] = 'DEBUG'
+import logging
+logger = logging.getLogger(__name__)
+with Sync() as sync:
+    if sync.comm.rank == 0:
+        if not os.path.exists('{:s}/'.format(data_dir)):
+            os.mkdir('{:s}/'.format(data_dir))
+        logdir = os.path.join(data_dir,'logs')
+        if not os.path.exists(logdir):
+            os.mkdir(logdir)
+
+
 
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
@@ -144,8 +151,9 @@ integ = lambda A, C : de.operators.Integrate(A, C)
 
 o = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
 o['g'] = 1
-logger.warning(integ(integ(o,'x'),'z').evaluate()['g'])
-
+# o_int = integ(integ(o,'x'),'z').evaluate()
+# if rank == 0:
+#     logger.warning(o_int['g'])
 
 ex = de.field.Field(name='ex', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
 ez = de.field.Field(name='ez', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
@@ -174,18 +182,24 @@ Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 Ma2 = ε
 Pr = 1
 
-μ = 0.001
+μ = 0.005
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
+
+scale = de.field.Field(name='scale', dist=d, bases=(zb,), dtype=np.float64)
+scale['g'] = h0['g']
+
+for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
+    logger.info('scaled {:} has  {:} terms'.format(ncc,(np.abs((scale*ncc).evaluate()['c'])>ncc_cutoff).sum()))
 
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2), -dot(u, grad(Υ))))
-problem.add_equation((dt(u) + Ma2*(γ/(γ-1)*grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
-                      -μ*exp(-Υ0)*viscous_terms + P1*τu1 + P2*τu2,
-                      -dot(u,grad(u)) + Ma2*(γ/(γ-1)*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)))) #\
-#                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms)) # nonlinear density effects on viscosity
-problem.add_equation((dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2,
-                      -dot(u,grad(s)) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))) # need VH and nonlinear density effects on diffusion
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))), scale*(-dot(u, grad(Υ))))) #- P1*dot(ez,τu2)
+problem.add_equation((scale*(dt(u) + Ma2*(γ/(γ-1)*grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
+                      -μ*exp(-Υ0)*viscous_terms + P1*τu1 + P2*τu2),
+                      scale*(-dot(u,grad(u)) + Ma2*(γ/(γ-1)*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) \
+                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2),
+                      scale*(-dot(u,grad(s)) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((u(z=0), 0))
@@ -196,16 +210,21 @@ logger.info("Problem built")
 # initial conditions
 noise = de.field.Field(name='noise', dist=d, bases=(xb, zb), dtype=np.float64)
 noise['g'] = np.random.randn(*noise['g'].shape)
+noise.require_scales(0.25)
+noise['g']
+noise.require_scales(1)
+
 amp = 1e-4*Ma2
 s['g'] = amp*noise['g']*np.sin(np.pi*z/Lz)
+Υ['g'] = -γ/(γ-1)*s['g']
 
-solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2)
+solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
 
 cfl_cadence = 1
 cfl_threshold = 0.1
 cfl_safety_factor = 0.4
-max_Δt = Δt = 0.1
+max_Δt = Δt = 0.5
 
 # CFL = flow_tools.CFL(solver, initial_dt=Δt, cadence=cfl_cadence, safety=cfl_safety_factor,
 #                      max_change=1.5, min_change=0.5, max_dt=max_Δt, threshold=cfl_threshold)
@@ -245,23 +264,24 @@ def L_inf(q):
         Q = np.max(np.abs(q['g']))
     return reducer.reduce_scalar(Q, MPI.MAX)
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=1,max_writes=10)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=10)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
 
 report_cadence = 10
-print(vol_avg(o))
+#print(vol_avg(o))
 good_solution = True
 while solver.ok and good_solution:
     # advance
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
-        KE_avg = vol_avg(KE.evaluate())
-        IE_avg = vol_avg(IE.evaluate())
-
+        #KE_avg = vol_avg(KE.evaluate())
+        #IE_avg = vol_avg(IE.evaluate())
+        KE_avg = 0
+        IE_avg = 0
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
         logger.info(log_string)
-    Δt = compute_dt(Δt)
+    Δt = compute_dt(Δt, dt_max=max_Δt)
     good_solution = np.isfinite(Δt)
