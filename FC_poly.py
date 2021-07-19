@@ -188,7 +188,7 @@ Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 Ma2 = ε
 Pr = 1
 
-μ = 0.002
+μ = 0.001
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
 
 logger.info("Ra = {:}".format(1/(μ*κ*cP)))
@@ -216,8 +216,9 @@ problem.add_equation((u(z=Lz), 0))
 logger.info("Problem built")
 
 # initial conditions
+rng = np.random.default_rng(seed=42)
 noise = de.field.Field(name='noise', dist=d, bases=(xb, zb), dtype=np.float64)
-noise['g'] = np.random.randn(*noise['g'].shape)
+noise['g'] = rng.random(noise['g'].shape)
 noise.require_scales(0.25)
 noise['g']
 noise.require_scales(1)
@@ -233,13 +234,13 @@ solver.stop_iteration = run_time_iter
 cfl_cadence = 1
 cfl_threshold = 0.1
 cfl_safety_factor = 0.4
-max_Δt = Δt = 0.5
+max_Δt = Δt = 0.1 #0.5
 
 # CFL = flow_tools.CFL(solver, initial_dt=Δt, cadence=cfl_cadence, safety=cfl_safety_factor,
 #                      max_change=1.5, min_change=0.5, max_dt=max_Δt, threshold=cfl_threshold)
 # CFL.add_velocities(('u', 'w'))
 
-Δt = 1e-2
+#Δt = 1e-2
 
 KE = 0.5*exp(Υ0+Υ)*dot(u,u)
 IE = h0*exp(θ)*(s+s0)
@@ -263,7 +264,8 @@ def compute_dt(dt_old, threshold=0.1, dt_max=1e-2):
 
 # need integration weights
 def vol_avg(q):
-    Q = integ(integ(q,'x'),'z').evaluate()['g']
+    #Q = integ(integ(q,'x'),'z').evaluate()['g']
+    Q = np.sum(q['g'])
     return reducer.reduce_scalar(Q, MPI.SUM)
 
 def L_inf(q):
@@ -273,7 +275,7 @@ def L_inf(q):
         Q = np.max(np.abs(q['g']))
     return reducer.reduce_scalar(Q, MPI.MAX)
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=10)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.1,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
@@ -285,10 +287,8 @@ while solver.ok and good_solution:
     # advance
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
-        #KE_avg = vol_avg(KE.evaluate())
-        #IE_avg = vol_avg(IE.evaluate())
-        KE_avg = 0
-        IE_avg = 0
+        KE_avg = vol_avg(KE.evaluate())
+        IE_avg = cP*Ma2*vol_avg(IE.evaluate())
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
         logger.info(log_string)
