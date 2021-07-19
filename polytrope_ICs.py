@@ -116,7 +116,7 @@ if norm_top:
 else:
     HS_problem.add_equation((θ(z=0),0))
 
-ncc_cutoff = 1e-14
+ncc_cutoff = 1e-8
 tolerance = 1e-8
 
 solver = solvers.NonlinearBoundaryValueSolver(HS_problem, ncc_cutoff=ncc_cutoff)

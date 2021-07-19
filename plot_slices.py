@@ -31,7 +31,6 @@ def main(filename, start, count, tasks, output):
     # Plot writes
     with h5py.File(filename, mode='r') as f:
         t = np.array(f['scales/sim_time'])
-        print(f['scales/write_number'][:])
         for i, task in enumerate(tasks):
             time = t
             center_zero=False
@@ -43,7 +42,6 @@ def main(filename, start, count, tasks, output):
             Lz = np.max(z)-np.min(z)
             Lx = np.max(x)-np.min(x)
             figsize = (6.4, 1.2*Lz/Lx*6.4)
-            print(x.shape, z.shape, task.shape)
             for k in range(len(t)):
                 time = t[k]
                 fig, ax = plt.subplots(1, figsize=figsize)
@@ -83,7 +81,6 @@ if __name__ == "__main__":
     from dedalus.tools.parallel import Sync
 
     args = docopt(__doc__)
-    print(args)
     tasks = args['--tasks'].split(',')
     output_path = pathlib.Path(args['--output']).absolute()
     # Create output directory if needed
