@@ -24,7 +24,7 @@ def main(filename, start, count, tasks, output):
     # Plot settings
     dpi = 300
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
-    savename_func = lambda write: 'write_{:06}.png'.format(write)
+    cmap = None
     # Layout
 
 
@@ -36,6 +36,7 @@ def main(filename, start, count, tasks, output):
             time = t
             center_zero=False
             title = task
+            savename_func = lambda write: '{:s}_{:06d}.png'.format(title, write)
             task = f['tasks'][task]
             x = task.dims[1][0][:]
             z = task.dims[2][0][:]
@@ -45,7 +46,22 @@ def main(filename, start, count, tasks, output):
             for k in range(len(t)):
                 fig, ax = plt.subplots(1)
                 ax.set_aspect(1)
-                ax.pcolormesh(x, z, task[k,:].T, shading='nearest')
+                pcm = ax.pcolormesh(x, z, task[k,:].T, shading='nearest',cmap=cmap)
+                pmin,pmax = pcm.get_clim()
+                if center_zero:
+                    cNorm = matplotlib.colors.TwoSlopeNorm(vmin=pmin, vcenter=0, vmax=pmax)
+                    logger.info("centering zero: {} -- 0 -- {}".format(pmin, pmax))
+                else:
+                    cNorm = matplotlib.colors.Normalize(vmin=pmin, vmax=pmax)
+                pcm = ax.pcolormesh(x, z, task[k,:].T, shading='nearest',cmap=cmap, norm=cNorm)
+                ax_cb = fig.add_axes([0.91, 0.4, 0.02, 1-0.4*2])
+                cb = fig.colorbar(pcm, cax=ax_cb)
+                cb.formatter.set_scientific(True)
+                cb.formatter.set_powerlimits((0,4))
+                cb.ax.yaxis.set_offset_position('left')
+                cb.update_ticks()
+                fig.subplots_adjust(left=0.1,right=0.9)
+
                 savename = savename_func(f['scales/write_number'][k])
                 savepath = output.joinpath(savename)
                 fig.savefig(str(savepath), dpi=dpi)
@@ -63,7 +79,7 @@ if __name__ == "__main__":
 
     args = docopt(__doc__)
     print(args)
-    tasks = args['--tasks']
+    tasks = args['--tasks'].split(',')
     output_path = pathlib.Path(args['--output']).absolute()
     # Create output directory if needed
     with Sync() as sync:
