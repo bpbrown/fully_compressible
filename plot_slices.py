@@ -42,9 +42,11 @@ def main(filename, start, count, tasks, output):
             z = task.dims[2][0][:]
             Lz = np.max(z)-np.min(z)
             Lx = np.max(x)-np.min(x)
+            figsize = (6.4, 1.2*Lz/Lx*6.4)
             print(x.shape, z.shape, task.shape)
             for k in range(len(t)):
-                fig, ax = plt.subplots(1)
+                time = t[k]
+                fig, ax = plt.subplots(1, figsize=figsize)
                 ax.set_aspect(1)
                 pcm = ax.pcolormesh(x, z, task[k,:].T, shading='nearest',cmap=cmap)
                 pmin,pmax = pcm.get_clim()
@@ -60,8 +62,11 @@ def main(filename, start, count, tasks, output):
                 cb.formatter.set_powerlimits((0,4))
                 cb.ax.yaxis.set_offset_position('left')
                 cb.update_ticks()
-                fig.subplots_adjust(left=0.1,right=0.9)
-
+                fig.subplots_adjust(left=0.1,right=0.9,top=0.95)
+                if title is not None:
+                    ax_cb.text(0.5, 1.75, title, horizontalalignment='center', verticalalignment='center', transform=ax_cb.transAxes)
+                if time is not None:
+                    ax_cb.text(0.25, -0.5, "t = {:.0f}".format(time), horizontalalignment='left', verticalalignment='center', transform=ax_cb.transAxes)
                 savename = savename_func(f['scales/write_number'][k])
                 savepath = output.joinpath(savename)
                 fig.savefig(str(savepath), dpi=dpi)
