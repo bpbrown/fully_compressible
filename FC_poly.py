@@ -124,7 +124,8 @@ s = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
 u = de.field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.float64, tensorsig=(c,))
 
 # Taus
-zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz), alpha0=0)
+#zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz), alpha0=0)
+zb1 = zb._new_a_b(zb.a+2, zb.b+2)
 τs1 = de.field.Field(name='τs1', dist=d, bases=(xb,), dtype=np.float64)
 τs2 = de.field.Field(name='τs2', dist=d, bases=(xb,), dtype=np.float64)
 τu1 = de.field.Field(name='τu1', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
@@ -193,10 +194,10 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))), scale*(-dot(u, grad(Υ))))) #- P1*dot(ez,τu2)
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2) ), scale*(-dot(u, grad(Υ)))))
 problem.add_equation((scale*(dt(u) + Ma2*(γ/(γ-1)*grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
                       -μ*exp(-Υ0)*viscous_terms + P1*τu1 + P2*τu2),
-                      scale*(-dot(u,grad(u)) + Ma2*(γ/(γ-1)*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) \
+                      scale*(-dot(u,grad(u)) + Ma2*(γ/(γ-1)*-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) \
                       + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2),
                       scale*(-dot(u,grad(s)) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
