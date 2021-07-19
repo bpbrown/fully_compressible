@@ -5,7 +5,7 @@ Usage:
     plot_2d_series.py <files>... [options]
 
 Options:
-    --output=<dir>     Output directory [default: ./frames]
+    --output=<dir>     Output directory; defaults to 'frames' subdir within the case dir
     --tasks=<tasks>    Tasks to plot [default: s]
 """
 
@@ -82,7 +82,11 @@ if __name__ == "__main__":
 
     args = docopt(__doc__)
     tasks = args['--tasks'].split(',')
-    output_path = pathlib.Path(args['--output']).absolute()
+    if args['--output']:
+        output_path = pathlib.Path(args['--output']).absolute()
+    else:
+        case_name = args['<files>'][0].split('/')[0]
+        output_path = pathlib.Path(case_name+'/frames').absolute()
     # Create output directory if needed
     with Sync() as sync:
         if sync.comm.rank == 0:
