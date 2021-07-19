@@ -218,7 +218,7 @@ logger.info("Problem built")
 # initial conditions
 rng = np.random.default_rng(seed=42)
 noise = de.field.Field(name='noise', dist=d, bases=(xb, zb), dtype=np.float64)
-noise['g'] = rng.random(noise['g'].shape)
+noise['g'] = 2*rng.random(noise['g'].shape)-1 # -1--1 uniform distribution
 noise.require_scales(0.25)
 noise['g']
 noise.require_scales(1)
@@ -227,7 +227,9 @@ amp = 1e-4*Ma2
 s['g'] = amp*noise['g']*np.sin(np.pi*z/Lz)
 Υ['g'] = -γ/(γ-1)*s['g']
 θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
-
+for f in [s,Υ,θ]:
+    print(np.min(f['g']), np.max(f['g']))
+print(noise['g'].shape)
 solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
 
@@ -275,7 +277,7 @@ def L_inf(q):
         Q = np.max(np.abs(q['g']))
     return reducer.reduce_scalar(Q, MPI.MAX)
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.1,max_writes=20)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.1,max_writes=1)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
@@ -294,3 +296,4 @@ while solver.ok and good_solution:
         logger.info(log_string)
     Δt = compute_dt(Δt, dt_max=max_Δt)
     good_solution = np.isfinite(Δt)
+    good_solution = False
