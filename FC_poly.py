@@ -83,6 +83,8 @@ else:
 
 ε = m_ad - m
 
+cP = γ/(γ-1)
+
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
 h_slope = -1/(1+m)
@@ -129,6 +131,11 @@ trans = lambda A: de.operators.TransposeComponents(A)
 dt = lambda A: de.operators.TimeDerivative(A)
 exp = lambda A: de.operators.UnaryGridFunction(np.exp, A)
 log = lambda A: de.operators.UnaryGridFunction(np.log, A)
+integ = lambda A, C : de.operators.Integrate(A, C)
+
+o = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
+o['g'] = 1
+logger.warning(integ(integ(o,'x'),'z').evaluate()['g'])
 
 
 ex = de.field.Field(name='ex', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
@@ -137,9 +144,6 @@ ex['g'][0] = 1
 ez['g'][1] = 1
 
 h0 = de.field.Field(name='h0', dist=d, bases=(zb,), dtype=np.float64)
-
-m = 1.5-1e-2
-
 
 h0['g'] = h_bot+h_slope*z
 θ0 = log(h0).evaluate()
@@ -162,13 +166,13 @@ Ma2 = ε
 Pr = 1
 
 μ = 0.001
-κ = Pr*μ*γ/(γ-1) # check this in Mihalas & Mihalas in the morning. 7/15/21 10:30pm
+κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
 
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
 problem.add_equation((dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2), -dot(u, grad(Υ))))
 problem.add_equation((dt(u) + Ma2*(γ/(γ-1)*grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
-                      -μ*exp(-Υ0)*viscous_terms - P1*τu1 - P2*τu2,
+                      -μ*exp(-Υ0)*viscous_terms + P1*τu1 + P2*τu2,
                       -dot(u,grad(u)) + Ma2*(γ/(γ-1)*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)))) #\
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms)) # nonlinear density effects on viscosity
 problem.add_equation((dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2,
@@ -201,14 +205,45 @@ max_Δt = Δt = 0.1
 Δt = 1e-2
 
 KE = 0.5*exp(Υ0+Υ)*dot(u,u)
-IE = h0*exp(θ)*s
+IE = h0*exp(θ)*(s+s0)
 
+reducer = GlobalArrayReducer(d.comm_cart)
+
+dz = Lz/nz
+dx = Lx/nx
+safety = 0.4
+def compute_dt(dt_old, threshold=0.1, dt_max=1e-2):
+  local_freq = np.abs(u['g'][1]/dz) + np.abs(u['g'][0]/dx)
+  global_freq = reducer.global_max(local_freq)
+  if global_freq == 0.:
+      dt = np.inf
+  else:
+      dt = 1 / global_freq
+  dt *= safety
+  if dt > dt_max: dt = dt_max
+  if dt < dt_old*(1+threshold) and dt > dt_old*(1-threshold): dt = dt_old
+  return dt
+
+# need integration weights
+def vol_avg(q):
+    Q = integ(integ(q,'x'),'z').evaluate()['g']
+    return reducer.reduce_scalar(Q, MPI.SUM)
+
+def L_inf(q):
+    if q['g'].size == 0:
+        Q = 0
+    else:
+        Q = np.max(np.abs(q['g']))
+    return reducer.reduce_scalar(Q, MPI.MAX)
+
+print(vol_avg(o))
 good_solution = True
 while solver.ok and good_solution:
-    # Δt = CFL.compute_dt()
     # advance
-    KE_avg = np.mean(KE.evaluate()['g']) # poor approach
-    IE_avg = np.mean(IE.evaluate()['g']) # poor approach
+    KE_avg = vol_avg(KE.evaluate())
+    IE_avg = vol_avg(IE.evaluate())
     solver.step(Δt)
     log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
+    log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
     logger.info(log_string)
+    Δt = compute_dt(Δt)
