@@ -170,9 +170,9 @@ h0['g'] = h_bot+h_slope*z
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
 
 logger.info("h0: {}".format(h0['g']))
-logger.info("θ0 ranges from {}--{}".format(np.min(θ0['g']), np.max(θ0['g'])))
-logger.info("Υ0 ranges from {}--{}".format(np.min(Υ0['g']), np.max(Υ0['g'])))
-logger.info("s0 ranges from {}--{}".format(np.min(s0['g']), np.max(s0['g'])))
+for f in [θ0, Υ0, s0]:
+    logger.info("{:} ranges from {}--{}".format(f, np.min(f['g']), np.max(f['g'])))
+
 # stress-free bcs
 #u_perp_inner = radial(angular(e(r=r_inner)))
 #u_perp_outer = radial(angular(e(r=r_outer)))
@@ -207,7 +207,8 @@ problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*gr
                       scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ))) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2),
-                      scale*(-dot(u,grad(s)) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
+                      scale*(-dot(u,grad(s)) + κ*exp(-Υ0)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
+                      #  κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((u(z=0), 0))
@@ -228,8 +229,8 @@ s['g'] = amp*noise['g']*np.sin(np.pi*z/Lz)
 Υ['g'] = -γ/(γ-1)*s['g']
 θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
 for f in [s,Υ,θ]:
-    print(np.min(f['g']), np.max(f['g']))
-print(noise['g'].shape)
+    logger.info("{}: {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
+
 solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
 
@@ -251,8 +252,8 @@ reducer = GlobalArrayReducer(d.comm_cart)
 
 dz = Lz/nz
 dx = Lx/nx
-safety = 0.4
-def compute_dt(dt_old, threshold=0.1, dt_max=1e-2):
+
+def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
   local_freq = np.abs(u['g'][1]/dz) + np.abs(u['g'][0]/dx)
   global_freq = reducer.global_max(local_freq)
   if global_freq == 0.:
@@ -277,7 +278,7 @@ def L_inf(q):
         Q = np.max(np.abs(q['g']))
     return reducer.reduce_scalar(Q, MPI.MAX)
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.1,max_writes=1)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
@@ -294,6 +295,5 @@ while solver.ok and good_solution:
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
         logger.info(log_string)
-    Δt = compute_dt(Δt, dt_max=max_Δt)
+    Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
     good_solution = np.isfinite(Δt)
-    good_solution = False
