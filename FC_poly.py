@@ -208,7 +208,7 @@ problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*gr
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2),
                       scale*(-dot(u,grad(s)) + κ*exp(-Υ0)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
-                      #  κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
+                      #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((u(z=0), 0))
@@ -217,7 +217,7 @@ problem.add_equation((u(z=Lz), 0))
 logger.info("Problem built")
 
 # initial conditions
-rng = np.random.default_rng(seed=42)
+rng = np.random.default_rng(seed=42+rank)
 noise = de.field.Field(name='noise', dist=d, bases=(xb, zb), dtype=np.float64)
 noise['g'] = 2*rng.random(noise['g'].shape)-1 # -1--1 uniform distribution
 noise.require_scales(0.25)
