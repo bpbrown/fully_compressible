@@ -125,7 +125,8 @@ s = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
 u = de.field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.float64, tensorsig=(c,))
 
 # Taus
-#zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz), alpha0=0)
+#zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz))
+#zb1 = de.basis.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz))
 zb1 = zb._new_a_b(zb.a+2, zb.b+2)
 τs1 = de.field.Field(name='τs1', dist=d, bases=(xb,), dtype=np.float64)
 τs2 = de.field.Field(name='τs2', dist=d, bases=(xb,), dtype=np.float64)
@@ -168,6 +169,7 @@ h0['g'] = h_bot+h_slope*z
 θ0 = log(h0).evaluate()
 Υ0 = (m*θ0).evaluate()
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
+ρ0_inv = exp(-Υ0).evaluate()
 
 logger.info("h0: {}".format(h0['g']))
 for f in [θ0, Υ0, s0]:
@@ -203,16 +205,18 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
 problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), scale*(-dot(u, grad(Υ)))))
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
-                      -μ*exp(-Υ0)*viscous_terms + P1*τu1 + P2*τu2),
+                      -μ*ρ0_inv*viscous_terms + P1*τu1 + P2*τu2),
                       scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ))) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*exp(-Υ0)*lap(θ) + P1*τs1 + P2*τs2),
-                      scale*(-dot(u,grad(s)) + κ*exp(-Υ0)*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + P2*τs2),
+                      scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
-problem.add_equation((θ(z=0), 0))
+#problem.add_equation((θ(z=0), 0))
+problem.add_equation((s(z=0), 0))
 problem.add_equation((u(z=0), 0))
-problem.add_equation((θ(z=Lz), 0))
+#problem.add_equation((θ(z=Lz), 0))
+problem.add_equation((s(z=Lz), 0))
 problem.add_equation((u(z=Lz), 0))
 logger.info("Problem built")
 
@@ -250,7 +254,7 @@ IE = h0*exp(θ)*(s+s0)
 
 reducer = GlobalArrayReducer(d.comm_cart)
 
-dz = Lz/nz
+dz = np.gradient(z, axis=1) #Lz/nz
 dx = Lx/nx
 
 def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
@@ -281,11 +285,13 @@ def L_inf(q):
 slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
+slice_output.add_task(θ, name='θ')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
 
 report_cadence = 10
 #print(vol_avg(o))
 good_solution = True
+KE_avg = 0
 while solver.ok and good_solution:
     # advance
     solver.step(Δt)
@@ -296,4 +302,4 @@ while solver.ok and good_solution:
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
         logger.info(log_string)
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
-    good_solution = np.isfinite(Δt)
+    good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)*(L_inf(τu1)<1)
