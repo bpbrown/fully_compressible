@@ -72,17 +72,18 @@ Pr = Prandtl = float(args['--Prandtl'])
 m_ad = 1/(γ-1)
 if args['--m']:
     m = float(args['--m'])
-    strat_label = '_m{}'.format(args['--m'])
+    strat_label = 'm{}'.format(args['--m'])
 else:
     m = m_ad - float(args['--epsilon'])
-    strat_label = '_eps{}'.format(args['--epsilon'])
+    strat_label = 'eps{}'.format(args['--epsilon'])
 ε = m_ad - m
 
 cP = γ/(γ-1)
 
 data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_Ra{}_Pr{}".format(args['--n_h'], args['--Rayleigh'], args['--Prandtl'])
-data_dir += "{}_a{}".format(strat_label, args['--aspect'])
+data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
+data_dir += "_nz{:d}".format(nz)
 
 from dedalus.tools.config import config
 config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
@@ -133,10 +134,12 @@ zb1 = zb._new_a_b(zb.a+2, zb.b+2)
 τu1 = de.field.Field(name='τu1', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
 τu2 = de.field.Field(name='τu2', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
 P1 = de.field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
+P2 = de.field.Field(name='P2', dist=d, bases=(zb1,), dtype=np.float64)
 if rank == 0:
     P1['c'][0,-1] = 1
-dz = lambda A: de.operators.Differentiate(A, c.coords[1])
-P2 = dz(P1).evaluate()
+    P2['c'][0,-2] = 1
+#dz = lambda A: de.operators.Differentiate(A, c.coords[1])
+#P2 = dz(P1).evaluate()
 
 # Parameters and operators
 div = lambda A: de.operators.Divergence(A, index=0)
@@ -150,6 +153,7 @@ trans = lambda A: de.operators.TransposeComponents(A)
 dt = lambda A: de.operators.TimeDerivative(A)
 exp = lambda A: de.operators.UnaryGridFunction(np.exp, A)
 log = lambda A: de.operators.UnaryGridFunction(np.log, A)
+sqrt = lambda A: de.operators.UnaryGridFunction(np.sqrt, A)
 integ = lambda A, C : de.operators.Integrate(A, C)
 
 o = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
@@ -251,6 +255,7 @@ max_Δt = Δt = 0.1 #0.5
 
 KE = 0.5*exp(Υ0+Υ)*dot(u,u)
 IE = h0*exp(θ)*(s+s0)
+Re = exp(Υ0+Υ)*sqrt(dot(u,u))/μ
 
 reducer = GlobalArrayReducer(d.comm_cart)
 
@@ -273,6 +278,7 @@ def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
 def vol_avg(q):
     #Q = integ(integ(q,'x'),'z').evaluate()['g']
     Q = np.sum(q['g'])
+    Q /= (nx*nz)
     return reducer.reduce_scalar(Q, MPI.SUM)
 
 def L_inf(q):
@@ -288,7 +294,7 @@ slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
 
-report_cadence = 10
+report_cadence = 100
 #print(vol_avg(o))
 good_solution = True
 KE_avg = 0
@@ -298,7 +304,9 @@ while solver.ok and good_solution:
     if solver.iteration % report_cadence == 0:
         KE_avg = vol_avg(KE.evaluate())
         IE_avg = cP*Ma2*vol_avg(IE.evaluate())
-        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg)
+        Re_avg = vol_avg(Re.evaluate())
+        Re_max = L_inf(Re.evaluate())
+        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
         logger.info(log_string)
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
