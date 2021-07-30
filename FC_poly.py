@@ -296,6 +296,29 @@ slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
 
+if rank == 0:
+    scalar_file = pathlib.Path('{:s}/scalar_output.h5'.format(data_dir)).absolute()
+    if os.path.exists(str(scalar_file)):
+        scalar_file.unlink()
+    scalar_f = h5py.File('{:s}'.format(str(scalar_file)), 'a')
+    parameter_group = scalar_f.create_group('parameters')
+    parameter_group['μ'] = μ
+    parameter_group['Prandtl'] = Prandtl
+    parameter_group['n_h'] = n_h
+    parameter_group['nx'] = nx
+    parameter_group['nz'] = nz
+
+    scale_group = scalar_f.create_group('scales')
+    scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+    task_group = scalar_f.create_group('tasks')
+    scalar_keys = ['KE', 'IE', 'Re', 'τ_u1', 'τ_u2', 'τ_s1', 'τ_s2']
+    for key in scalar_keys:
+        task_group.create_dataset(name=key, shape=(0,), maxshape=(None,), dtype=np.float64)
+    scalar_index = 0
+    scalar_f.close()
+    scalar_data ={}
+
+
 report_cadence = 100
 #print(vol_avg(o))
 good_solution = True
@@ -308,8 +331,29 @@ while solver.ok and good_solution:
         IE_avg = cP*Ma2*vol_avg(IE.evaluate())
         Re_avg = vol_avg(Re.evaluate())
         Re_max = L_inf(Re.evaluate())
+        τu1_max = L_inf(τu1)
+        τu2_max = L_inf(τu2)
+        τs1_max = L_inf(τs1)
+        τs2_max = L_inf(τs2)
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
-        log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
+        log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(τu1_max, τu2_max, τs1_max, τs2_max)
         logger.info(log_string)
+        if rank == 0:
+            scalar_data['KE'] = KE
+            scalar_data['IE'] = IE
+            scalar_data['Re'] = Re
+            scalar_data['τ_u1'] = τu1_max
+            scalar_data['τ_u2'] = τu2_max
+            scalar_data['τ_s1'] = τs1_max
+            scalar_data['τ_s2'] = τs2_max
+
+            scalar_f = h5py.File('{:s}'.format(str(scalar_file)), 'a')
+            scalar_f['scales/sim_time'].resize(scalar_index+1, axis=0)
+            scalar_f['scales/sim_time'][scalar_index] = solver.sim_time
+            for key in scalar_data:
+                scalar_f['tasks/'+key].resize(scalar_index+1, axis=0)
+                scalar_f['tasks/'+key][scalar_index] = scalar_data[key]
+            scalar_index += 1
+            scalar_f.close()
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
     good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)*(L_inf(τu1)<1)
