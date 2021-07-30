@@ -7,6 +7,7 @@ Usage:
 
 Options:
     --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e4]
+    --mu=<mu>                            Viscosity [default: 0.001]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_rho=<n_rho>                      Density scale heights across unstable layer [default: 3]
     --n_h=<n_h>                          Enthalpy scale heights [default: 2]
@@ -81,7 +82,8 @@ else:
 cP = γ/(γ-1)
 
 data_dir = sys.argv[0].split('.py')[0]
-data_dir += "_nh{}_Ra{}_Pr{}".format(args['--n_h'], args['--Rayleigh'], args['--Prandtl'])
+#data_dir += "_nh{}_Ra{}_Pr{}".format(args['--n_h'], args['--Rayleigh'], args['--Prandtl'])
+data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
 data_dir += "_nz{:d}".format(nz)
 
@@ -194,7 +196,7 @@ Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 Ma2 = ε
 Pr = 1
 
-μ = 0.001
+μ = float(args['--mu'])
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
 
 logger.info("Ra = {:}".format(1/(μ*κ*cP)))
@@ -306,7 +308,7 @@ while solver.ok and good_solution:
         IE_avg = cP*Ma2*vol_avg(IE.evaluate())
         Re_avg = vol_avg(Re.evaluate())
         Re_max = L_inf(Re.evaluate())
-        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:8.3e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
+        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(L_inf(τu1), L_inf(τu2), L_inf(τs1), L_inf(τs2))
         logger.info(log_string)
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
