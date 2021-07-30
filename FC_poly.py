@@ -45,6 +45,8 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 
 import sys
 import os
+import pathlib
+import h5py
 
 ncc_cutoff = float(args['--ncc_cutoff'])
 
@@ -130,7 +132,7 @@ u = de.field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.float64, tensorsig=
 # Taus
 #zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz))
 #zb1 = de.basis.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz))
-zb1 = zb._new_a_b(zb.a+2, zb.b+2)
+zb1 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 τs1 = de.field.Field(name='τs1', dist=d, bases=(xb,), dtype=np.float64)
 τs2 = de.field.Field(name='τs2', dist=d, bases=(xb,), dtype=np.float64)
 τu1 = de.field.Field(name='τu1', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
@@ -311,7 +313,7 @@ if rank == 0:
     scale_group = scalar_f.create_group('scales')
     scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
     task_group = scalar_f.create_group('tasks')
-    scalar_keys = ['KE', 'IE', 'Re', 'τ_u1', 'τ_u2', 'τ_s1', 'τ_s2']
+    scalar_keys = ['KE', 'IE', 'Re', 'Re_max', 'τ_u1', 'τ_u2', 'τ_s1', 'τ_s2']
     for key in scalar_keys:
         task_group.create_dataset(name=key, shape=(0,), maxshape=(None,), dtype=np.float64)
     scalar_index = 0
@@ -339,9 +341,10 @@ while solver.ok and good_solution:
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(τu1_max, τu2_max, τs1_max, τs2_max)
         logger.info(log_string)
         if rank == 0:
-            scalar_data['KE'] = KE
-            scalar_data['IE'] = IE
-            scalar_data['Re'] = Re
+            scalar_data['KE'] = KE_avg
+            scalar_data['IE'] = IE_avg
+            scalar_data['Re'] = Re_avg
+            scalar_data['Re_max'] = Re_max
             scalar_data['τ_u1'] = τu1_max
             scalar_data['τ_u2'] = τu2_max
             scalar_data['τ_s1'] = τs1_max
