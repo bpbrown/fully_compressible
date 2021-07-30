@@ -6,17 +6,17 @@ Usage:
     FC_poly.py [options]
 
 Options:
-    --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e4]
-    --mu=<mu>                            Viscosity [default: 0.001]
+    --Rayleigh=<Rayleigh>                Rayleigh number (not used) [default: 1e4]
+    --mu=<mu>                            Viscosity [default: 0.0015]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
-    --n_rho=<n_rho>                      Density scale heights across unstable layer [default: 3]
-    --n_h=<n_h>                          Enthalpy scale heights [default: 2]
-    --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 1e-4]
+    --n_rho=<n_rho>                      Density scale heights across unstable layer (not used) [default: 0.5]
+    --n_h=<n_h>                          Enthalpy scale heights [default: 0.5]
+    --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0.5]
     --m=<m>                              Polytopic index of our polytrope
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
-    --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
+    --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
 
     --run_time=<run_time>                Run time, in hours [default: 23.5]
@@ -88,6 +88,8 @@ data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
 data_dir += "_nz{:d}".format(nz)
+if args['--label']:
+    data_dir += '_{:s}'.format(args['--label'])
 
 from dedalus.tools.config import config
 config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
@@ -133,6 +135,7 @@ u = de.field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.float64, tensorsig=
 #zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz))
 #zb1 = de.basis.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz))
 zb1 = zb.clone_with(a=zb.a+2, b=zb.b+2)
+#zb1 = de.basis.ChebyshevV(c.coords[1], size=nz, bounds=(0, Lz))
 τs1 = de.field.Field(name='τs1', dist=d, bases=(xb,), dtype=np.float64)
 τs2 = de.field.Field(name='τs2', dist=d, bases=(xb,), dtype=np.float64)
 τu1 = de.field.Field(name='τu1', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
@@ -183,6 +186,11 @@ logger.info("h0: {}".format(h0['g']))
 for f in [θ0, Υ0, s0]:
     logger.info("{:} ranges from {}--{}".format(f, np.min(f['g']), np.max(f['g'])))
 
+s0_2 = de.field.Field(name='s0_2', dist=d, bases=(zb,), dtype=np.float64)
+Υ0_2 = de.field.Field(name='Υ0_2', dist=d, bases=(zb,), dtype=np.float64)
+s0_2['g'] = s0['g']
+Υ0_2['g'] = Υ0['g']
+
 # stress-free bcs
 #u_perp_inner = radial(angular(e(r=r_inner)))
 #u_perp_outer = radial(angular(e(r=r_outer)))
@@ -200,8 +208,8 @@ Pr = 1
 
 μ = float(args['--mu'])
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
-Ra_bot = (1/(μ*κ*cP)*exp(Υ0)(z=0)).evaluate()['g']
-Ra_top = (1/(μ*κ*cP)*exp(Υ0)(z=Lz)).evaluate()['g']
+Ra_bot = (1/(μ*κ*cP)*exp(Υ0_2)(z=0)).evaluate()['g']
+Ra_top = (1/(μ*κ*cP)*exp(Υ0_2)(z=Lz)).evaluate()['g']
 
 if rank ==0:
     logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
@@ -247,13 +255,14 @@ s['g'] = amp*noise['g']*np.sin(np.pi*z/Lz)
 for f in [s,Υ,θ]:
     logger.info("{}: {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
 
-solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
+#solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
+solver = solvers.InitialValueSolver(problem, de.timesteppers.RK443, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
 
 cfl_cadence = 1
 cfl_threshold = 0.1
 cfl_safety_factor = 0.4
-max_Δt = Δt = 0.1 #0.5
+max_Δt = Δt = 10 #0.1 #0.5
 
 # CFL = flow_tools.CFL(solver, initial_dt=Δt, cadence=cfl_cadence, safety=cfl_safety_factor,
 #                      max_change=1.5, min_change=0.5, max_dt=max_Δt, threshold=cfl_threshold)
@@ -261,13 +270,13 @@ max_Δt = Δt = 0.1 #0.5
 
 #Δt = 1e-2
 
-KE = 0.5*exp(Υ0+Υ)*dot(u,u)
-IE = h0*exp(θ)*(s+s0)
-Re = exp(Υ0+Υ)*sqrt(dot(u,u))/μ
+KE = 0.5*exp(Υ0_2+Υ)*dot(u,u)
+IE = h0*exp(θ)*(s+s0_2)
+Re = exp(Υ0_2+Υ)*sqrt(dot(u,u))/μ
 
 reducer = GlobalArrayReducer(d.comm_cart)
 
-dz = Lz/nz #np.gradient(z, axis=1) 
+dz = Lz/nz #np.gradient(z, axis=1)
 dx = Lx/nx
 
 def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
@@ -297,7 +306,7 @@ def L_inf(q):
     return reducer.reduce_scalar(Q, MPI.MAX)
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=20)
-slice_output.add_task(s+s0, name='s+s0')
+slice_output.add_task(s+s0_2, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
@@ -325,7 +334,7 @@ if rank == 0:
     scalar_data ={}
 
 
-report_cadence = 100
+report_cadence = 20
 #print(vol_avg(o))
 good_solution = True
 KE_avg = 0
@@ -363,9 +372,9 @@ while solver.ok and good_solution:
             scalar_index += 1
             scalar_f.close()
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
-    good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)*(L_inf(τu1)<1)
+    good_solution = np.isfinite(Δt)*np.isfinite(KE_avg) #*(L_inf(τu1)<1)
 if not good_solution:
-    print("simulation terminated with good_solution = {}".format(good_solution))
-    print("Δt = {}".format(Δt))
-    print("KE = {}".format(KE_avg))
-    print("τu = {}".format(L_inf(τu1)))
+    logger.info("simulation terminated with good_solution = {}".format(good_solution))
+    logger.info("Δt = {}".format(Δt))
+    logger.info("KE = {}".format(KE_avg))
+    logger.info("τu = {}".format(L_inf(τu1)))
