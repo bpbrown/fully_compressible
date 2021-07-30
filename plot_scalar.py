@@ -52,11 +52,10 @@ fig_E, ax_E = plt.subplots(nrows=2)
 for key in energy_keys:
     ax_E[0].plot(t, data[key], label=key)
 ax_E[1].plot(t, data['KE'], label='KE')
-ax2 = ax_E[0].twinx()
-ax2.plot(t, data['Re'], label='Re')
 ax2 = ax_E[1].twinx()
-ax2.plot(t, data['Re'], label='Re')
-ax2.plot(t, data['Re_max'], label=r'Re$_\infty$')
+ax2.plot(t, data['Re'], label='Re', linestyle='dotted')
+ax2.plot(t, data['Re_max'], label=r'Re$_\infty$', linestyle='dotted')
+ax2.legend(loc='upper left')
 
 for ax in ax_E:
     if subrange:

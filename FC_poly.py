@@ -200,8 +200,12 @@ Pr = 1
 
 μ = float(args['--mu'])
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
+Ra_bot = (1/(μ*κ*cP)*exp(Υ0)(z=0)).evaluate()['g']
+Ra_top = (1/(μ*κ*cP)*exp(Υ0)(z=Lz)).evaluate()['g']
 
-logger.info("Ra = {:}".format(1/(μ*κ*cP)))
+if rank ==0:
+    logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
+    logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
 
 scale = de.field.Field(name='scale', dist=d, bases=(zb,), dtype=np.float64)
 scale['g'] = h0['g']
@@ -263,7 +267,7 @@ Re = exp(Υ0+Υ)*sqrt(dot(u,u))/μ
 
 reducer = GlobalArrayReducer(d.comm_cart)
 
-dz = np.gradient(z, axis=1) #Lz/nz
+dz = Lz/nz #np.gradient(z, axis=1) 
 dx = Lx/nx
 
 def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
@@ -360,3 +364,8 @@ while solver.ok and good_solution:
             scalar_f.close()
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
     good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)*(L_inf(τu1)<1)
+if not good_solution:
+    print("simulation terminated with good_solution = {}".format(good_solution))
+    print("Δt = {}".format(Δt))
+    print("KE = {}".format(KE_avg))
+    print("τu = {}".format(L_inf(τu1)))
