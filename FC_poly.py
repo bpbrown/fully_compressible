@@ -16,6 +16,9 @@ Options:
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
+    --safety=<safety>                    CFL safety factor
+    --SBDF2                              Use SBDF2
+
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
 
@@ -144,9 +147,9 @@ P1 = de.field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
 P2 = de.field.Field(name='P2', dist=d, bases=(zb1,), dtype=np.float64)
 if rank == 0:
     P1['c'][0,-1] = 1
-    P2['c'][0,-2] = 1
-#dz = lambda A: de.operators.Differentiate(A, c.coords[1])
-#P2 = dz(P1).evaluate()
+    #P2['c'][0,-2] = 1
+dz = lambda A: de.operators.Differentiate(A, c.coords[1])
+P2 = dz(P1).evaluate()
 
 # Parameters and operators
 div = lambda A: de.operators.Divergence(A, index=0)
@@ -184,7 +187,7 @@ s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
 
 logger.info("h0: {}".format(h0['g']))
 for f in [θ0, Υ0, s0]:
-    logger.info("{:} ranges from {}--{}".format(f, np.min(f['g']), np.max(f['g'])))
+    logger.info("{:} ranges from {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
 
 s0_2 = de.field.Field(name='s0_2', dist=d, bases=(zb,), dtype=np.float64)
 Υ0_2 = de.field.Field(name='Υ0_2', dist=d, bases=(zb,), dtype=np.float64)
@@ -208,12 +211,16 @@ Pr = 1
 
 μ = float(args['--mu'])
 κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
+s_bot = s0(z=0).evaluate()['g']
+s_top = s0(z=Lz).evaluate()['g']
+
 Ra_bot = (1/(μ*κ*cP)*exp(Υ0_2)(z=0)).evaluate()['g']
 Ra_top = (1/(μ*κ*cP)*exp(Υ0_2)(z=Lz)).evaluate()['g']
 
 if rank ==0:
     logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
     logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
+    logger.info("Δs = {:.2g}".format(s_bot[0][0]-s_top[0][0]))
 
 scale = de.field.Field(name='scale', dist=d, bases=(zb,), dtype=np.float64)
 scale['g'] = h0['g']
@@ -225,18 +232,18 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
 problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), scale*(-dot(u, grad(Υ)))))
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
-                      -μ*ρ0_inv*viscous_terms + P1*τu1 + P2*τu2),
+                      -μ*ρ0_inv*viscous_terms + P1*τu1 + μ*ρ0_inv*P2*τu2),
                       scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ))) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + P2*τs2),
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + κ*ρ0_inv*P2*τs2),
                       scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
-#problem.add_equation((θ(z=0), 0))
-problem.add_equation((s(z=0), 0))
+problem.add_equation((θ(z=0), 0))
+#problem.add_equation((s(z=0), 0))
 problem.add_equation((u(z=0), 0))
-#problem.add_equation((θ(z=Lz), 0))
-problem.add_equation((s(z=Lz), 0))
+problem.add_equation((θ(z=Lz), 0))
+#problem.add_equation((s(z=Lz), 0))
 problem.add_equation((u(z=Lz), 0))
 logger.info("Problem built")
 
@@ -255,20 +262,25 @@ s['g'] = amp*noise['g']*np.sin(np.pi*z/Lz)
 for f in [s,Υ,θ]:
     logger.info("{}: {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
 
-#solver = solvers.InitialValueSolver(problem, de.timesteppers.SBDF2, ncc_cutoff=ncc_cutoff)
-solver = solvers.InitialValueSolver(problem, de.timesteppers.RK443, ncc_cutoff=ncc_cutoff)
+if args['--SBDF2']:
+    ts = de.timesteppers.SBDF2
+    cfl_safety_factor = 0.3
+else:
+    ts = de.timesteppers.RK443
+    cfl_safety_factor = 0.4
+if args['--safety']:
+    cfl_safety_factor = float(args['--safety'])
+
+solver = solvers.InitialValueSolver(problem, ts, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
 
 cfl_cadence = 1
 cfl_threshold = 0.1
-cfl_safety_factor = 0.4
-max_Δt = Δt = 10 #0.1 #0.5
+max_Δt = Δt = 10
 
 # CFL = flow_tools.CFL(solver, initial_dt=Δt, cadence=cfl_cadence, safety=cfl_safety_factor,
 #                      max_change=1.5, min_change=0.5, max_dt=max_Δt, threshold=cfl_threshold)
 # CFL.add_velocities(('u', 'w'))
-
-#Δt = 1e-2
 
 KE = 0.5*exp(Υ0_2+Υ)*dot(u,u)
 IE = h0*exp(θ)*(s+s0_2)
