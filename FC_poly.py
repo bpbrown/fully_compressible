@@ -45,6 +45,7 @@ from fractions import Fraction
 
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
+from dedalus.extras import flow_tools
 
 import sys
 import os
@@ -147,9 +148,9 @@ P1 = de.field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
 P2 = de.field.Field(name='P2', dist=d, bases=(zb1,), dtype=np.float64)
 if rank == 0:
     P1['c'][0,-1] = 1
-    #P2['c'][0,-2] = 1
-dz = lambda A: de.operators.Differentiate(A, c.coords[1])
-P2 = dz(P1).evaluate()
+    P2['c'][0,-2] = 1
+#dz = lambda A: de.operators.Differentiate(A, c.coords[1])
+#P2 = dz(P1).evaluate()
 
 # Parameters and operators
 div = lambda A: de.operators.Divergence(A, index=0)
@@ -165,6 +166,8 @@ exp = lambda A: de.operators.UnaryGridFunction(np.exp, A)
 log = lambda A: de.operators.UnaryGridFunction(np.log, A)
 sqrt = lambda A: de.operators.UnaryGridFunction(np.sqrt, A)
 integ = lambda A, C : de.operators.Integrate(A, C)
+Coeff = de.operators.Coeff
+Conv = de.operators.Convert
 
 o = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
 o['g'] = 1
@@ -230,13 +233,13 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), scale*(-dot(u, grad(Υ)))))
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), Coeff(Conv(scale*(-dot(u, grad(Υ))) ,zb)) ))
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
                       -μ*ρ0_inv*viscous_terms + P1*τu1 + μ*ρ0_inv*P2*τu2),
-                      scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ))) # \
+                      Coeff(Conv(scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ),zb)) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + κ*ρ0_inv*P2*τs2),
-                      scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
+                      Coeff(Conv(scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))),zb)) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
@@ -350,14 +353,20 @@ report_cadence = 20
 #print(vol_avg(o))
 good_solution = True
 KE_avg = 0
+
+flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
+flow.add_property(Re, name='Re')
+
 while solver.ok and good_solution:
     # advance
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
         KE_avg = vol_avg(KE.evaluate())
         IE_avg = cP*Ma2*vol_avg(IE.evaluate())
-        Re_avg = vol_avg(Re.evaluate())
-        Re_max = L_inf(Re.evaluate())
+        #Re_avg = vol_avg(Re.evaluate())
+        #Re_max = L_inf(Re.evaluate())
+        Re_avg = flow.grid_average('Re')
+        Re_max = flow.max('Re')
         τu1_max = L_inf(τu1)
         τu2_max = L_inf(τu2)
         τs1_max = L_inf(τs1)
