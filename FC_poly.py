@@ -286,7 +286,7 @@ max_Δt = Δt = 10
 # CFL.add_velocities(('u', 'w'))
 
 KE = 0.5*exp(Υ0_2+Υ)*dot(u,u)
-IE = h0*exp(θ)*(s+s0_2)
+IE = cP*Ma2*h0*exp(θ)*(s+s0_2)
 Re = exp(Υ0_2+Υ)*sqrt(dot(u,u))/μ
 
 reducer = GlobalArrayReducer(d.comm_cart)
@@ -305,20 +305,6 @@ def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
   if dt > dt_max: dt = dt_max
   if dt < dt_old*(1+threshold) and dt > dt_old*(1-threshold): dt = dt_old
   return dt
-
-# need integration weights
-def vol_avg(q):
-    #Q = integ(integ(q,'x'),'z').evaluate()['g']
-    Q = np.sum(q['g'])
-    Q /= (nx*nz)
-    return reducer.reduce_scalar(Q, MPI.SUM)
-
-def L_inf(q):
-    if q['g'].size == 0:
-        Q = 0
-    else:
-        Q = np.max(np.abs(q['g']))
-    return reducer.reduce_scalar(Q, MPI.MAX)
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=20)
 slice_output.add_task(s+s0_2, name='s+s0')
@@ -356,21 +342,26 @@ KE_avg = 0
 
 flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(Re, name='Re')
+flow.add_property(KE, name='KE')
+flow.add_property(IE, name='IE')
+flow.add_property(τu1, name='τu1')
+flow.add_property(τu2, name='τu2')
+flow.add_property(τs1, name='τs1')
+flow.add_property(τs2, name='τs2')
+
 
 while solver.ok and good_solution:
     # advance
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
-        KE_avg = vol_avg(KE.evaluate())
-        IE_avg = cP*Ma2*vol_avg(IE.evaluate())
-        #Re_avg = vol_avg(Re.evaluate())
-        #Re_max = L_inf(Re.evaluate())
+        KE_avg = flow.grid_average('KE')
+        IE_avg = flow.grid_average('IE')
         Re_avg = flow.grid_average('Re')
         Re_max = flow.max('Re')
-        τu1_max = L_inf(τu1)
-        τu2_max = L_inf(τu2)
-        τs1_max = L_inf(τs1)
-        τs2_max = L_inf(τs2)
+        τu1_max = flow.max('τu1')
+        τu2_max = flow.max('τu2')
+        τs1_max = flow.max('τs1')
+        τs2_max = flow.max('τs2')
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
         log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(τu1_max, τu2_max, τs1_max, τs2_max)
         logger.info(log_string)
