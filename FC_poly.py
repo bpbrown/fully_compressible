@@ -235,10 +235,10 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
 problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), Coeff(Conv(scale*(-dot(u, grad(Υ))) ,zb)) ))
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
-                      -μ*ρ0_inv*viscous_terms + P1*τu1 + μ*ρ0_inv*P2*τu2),
+                      -μ*ρ0_inv*viscous_terms + P1*τu1 + P2*τu2),
                       Coeff(Conv(scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ),zb)) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + κ*ρ0_inv*P2*τs2),
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + P2*τs2),
                       Coeff(Conv(scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))),zb)) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
@@ -306,7 +306,7 @@ def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
   if dt < dt_old*(1+threshold) and dt > dt_old*(1-threshold): dt = dt_old
   return dt
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.5,max_writes=20)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.125,max_writes=20)
 slice_output.add_task(s+s0_2, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
@@ -335,12 +335,12 @@ if rank == 0:
     scalar_data ={}
 
 
-report_cadence = 20
+report_cadence = 10
 #print(vol_avg(o))
 good_solution = True
 KE_avg = 0
 
-flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
+flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(Re, name='Re')
 flow.add_property(KE, name='KE')
 flow.add_property(IE, name='IE')
@@ -384,9 +384,9 @@ while solver.ok and good_solution:
             scalar_index += 1
             scalar_f.close()
     Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
-    good_solution = np.isfinite(Δt)*np.isfinite(KE_avg) #*(L_inf(τu1)<1)
+    good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)
 if not good_solution:
     logger.info("simulation terminated with good_solution = {}".format(good_solution))
     logger.info("Δt = {}".format(Δt))
     logger.info("KE = {}".format(KE_avg))
-    logger.info("τu = {}".format(L_inf(τu1)))
+    logger.info("τu = {}".format((τu1_max,τu2_max,τs1_max,τs2_max)))
