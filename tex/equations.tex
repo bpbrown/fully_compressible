@@ -123,7 +123,7 @@ If we take $L = R T_c/\phi_c$, or the density scale height of the equivalent iso
 \end{equation}
 where the $c_P$ in the enthalpy has been factored to pull out the $R$ separately from the $(\gamma-1)/\gamma$
 
-You know, I don't think there is actually an lengthscale information here.  What we have is $R T_c/\phi_c = 1$, because if L is the characteristic lengthscale for $\del \phi$, then the L's cancel out.  Does that somehow imply that $L=H_\rho$?  Alternatively, the correct scale is $\del \phi = \vec{g}$ and then we have a lengthscale $ L = R T_c/g_c = H_\rho$.  Very confusing.
+You know, I don't think there is actually any lengthscale information here.  What we have is $R T_c/\phi_c = 1$, because if L is the characteristic lengthscale for $\del \phi$, then the L's cancel out.  Does that somehow imply that $L=H_\rho$?  Or that $L=L_z$, the depth of the domain.  Alternatively, the correct scale is $\del \phi = \vec{g}$ and then we have a lengthscale $ L = R T_c/g_c = H_\rho$.  Very confusing.
 
 I wonder also if there's anything in this ratio:
 \begin{equation}
@@ -132,7 +132,7 @@ I wonder also if there's anything in this ratio:
 I guess that's an adiabatic enthalphy scale height?
 (based on:)
 \begin{equation}
-  \del \ln h = - \frac{\del \phi}{h}, \quad \del s = 0.
+  \del \ln h = - \frac{\del \phi}{h}, \quad\text{with} \quad \del s = 0.
 \end{equation}
 For now we stick to a density scaleheight system, just because.
 
@@ -201,9 +201,134 @@ Recognizing that:
 \end{equation}
 and that:
 \begin{equation}
-  \del \left[h_0 \exp{(\ln_1)} + \phi\right] = \del \left[h_0 \exp{(\ln_1)-1} +h_0 + \phi\right]=  \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right]
+  \del \left[h_0 \exp{(\ln h_1)} + \phi\right] = \del \left[h_0 (\exp{(\ln h_1)}-1) +h_0 + \phi\right]
 \end{equation}
-we have:
+combined with:
+\begin{align}
+    h \frac{\del s}{c_P}
+    &= h_0 \exp{(\ln h_1)}\frac{\del(s_0+s_1)}{c_P} \\
+    &= h_0 \frac{\del s_0}{c_P}
+    + h_0 \frac{\del s_1}{c_P}
+    + h_0 \left[\exp{(\ln h_1)}-1\right]\frac{\del s_0}{c_P}
+    + h_0 \left[\exp{(\ln h_1)}-1\right]\frac{\del s_1}{c_P}
+\end{align}
+with hydrostatic equilbrium:
+\begin{equation}
+  \del \left[h_0 + \phi\right] = h_0 \frac{\del s_0}{c_P}
+\end{equation}
+we have our pressure/buoyancy balance:
+\begin{equation}
+  \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right]
+  = h_0 \frac{\del s_1}{c_P}
+  + h_0 \left[\exp{(\ln h_1)}-1\right]\frac{\del s_0}{c_P}
+  + h_0 \left[\exp{(\ln h_1)}-1\right]\frac{\del s_1}{c_P}.
+\end{equation}
+
+Let's work a bit further to pull out all linear-like terms.
+First, let's take $\theta = \ln h_1$ and absorb $c_P$ into $s$:
+\begin{equation}
+  \del\left[h_0\left(\exp{(\theta)}-1\right)\right]
+  = h_0 \del s_1
+  + h_0 \left[\exp{(\theta)}-1\right] \del s_0
+  + h_0 \left[\exp{(\theta)}-1\right] \del s_1.
+\end{equation}
+Now we add/subtract $\theta$ terms to de-stiffen $\exp{\theta}$ when linear terms can be isolated:
+\begin{align}
+  \del\left[h_0 \theta\right] + \del\left[h_0\left(\exp{(\theta)} -1 -\theta \right)\right]
+  = h_0 \del s_1
+  + h_0 \theta \del s_0
+  + h_0 \left[\exp{(\theta)} -1 -\theta\right] \del s_0
+  + h_0 \left[\exp{(\theta)} -1 \right] \del s_1.
+\end{align}
+Now we collect linear terms on the left, and nonlinear terms on the right:
+\begin{equation}
+  \del\left[h_0 \theta\right] - h_0 \del s_1 - (h_0 \del s_0)\theta
+  =
+  - \del\left[h_0\left(\exp{(\theta)} -1 -\theta \right)\right]
+  + h_0 \left[\exp{(\theta)} -1 -\theta\right] \del s_0
+  + h_0 \left[\exp{(\theta)} -1 \right] \del s_1.
+\end{equation}
+
+Collectively, this leads to a momentum equation with:
+\begin{multline}
+  \partial_t \vec{u}  +
+  \del\left[h_0 \theta\right] - (h_0 \del s_0)\theta - h_0 \del s_1
+  = \\
+  - \vec{u}\cdot \del\vec{u}
+  - \del\left[h_0\left(\exp{(\theta)} -1 -\theta \right)\right]
+  + (h_0 \del s_0)\left[\exp{(\theta)} -1 -\theta\right]
+  + h_0 \left[\exp{(\theta)} -1 \right] \del s_1
+  + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E)
+\end{multline}
+
+
+\emph{A note on computation:} the $\left(\exp{(\ln h_1)}-1\right)$ term should be computed using \verb+numpy.expm1(x)+ rather than computing \verb+numpy.exp(x)+ and then subtracting 1, especially when $x \sim \mathrm{Ma}^2 \ll 1$ (numerical convergence issues).
+
+\textbf{To do: add np.expm1 to the UnaryGridFunction list.}
+
+With the $\expm$ operator:
+\begin{multline}
+  \partial_t \vec{u}  +
+  \del\left[h_0 \theta\right] - (h_0 \del s_0)\theta - h_0 \del s_1
+  = \\
+  - \vec{u}\cdot \del\vec{u}
+  - \del\left[h_0\left(\expm{(\theta)} -\theta \right)\right]
+  + (h_0 \del s_0)\left[\expm{(\theta)} -\theta\right]
+  + h_0 \left[\expm{(\theta)}\right] \del s_1
+  + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E)
+\end{multline}
+We've moved various linear terms to the LHS and subtracted them off the corresponding nonlinearity on the RHS, which may help in stability especially at low Mach numbers.
+
+
+\subsection{Non-dimensional form}
+If we non-dimensionalize on a characteristic velocity $u_c$, then we're seeing the following non-dimensional parameter:
+\begin{equation}
+  \frac{h_c}{u_c^2} =
+  \left(\frac{\gamma}{\gamma-1}\right)\left(\frac{R T}{u_c^2}\right) =
+  \left(\frac{\gamma}{\gamma-1}\right) \mathrm{Ma}^2 =
+  c_P \mathrm{Ma}^2
+\end{equation}
+for an isothermal Mach number $\mathrm{Ma}$.
+
+If we also take a characteristic lengthscale $L_c = H_\rho$, and resulting timescale $\tau = L_c/u_c$, our time-derivative terms are of dimensional scale $u_c/\tau \partial_t = u_c^2/L_c \partial_t$.
+This suggests:
+\begin{align}
+  \partial_t \vec{u}  +
+  c_P \mathrm{Ma}^2 \del\left[h_0 \theta\right] &- c_P \mathrm{Ma}^2 (h_0 \del s_0)\theta - c_P \mathrm{Ma}^2 h_0 \del s_1
+  = \nonumber \\
+  &- \vec{u}\cdot \del\vec{u}
+  - c_P \mathrm{Ma}^2 \del\left[h_0\left(\expm{(\theta)} \nonumber -\theta \right)\right] \nonumber \\
+  & + c_P \mathrm{Ma}^2 (h_0 \del s_0)\left[\expm{(\theta)} -\theta\right]
+  + c_P \mathrm{Ma}^2 h_0 \left[\expm{(\theta)}\right] \del s_1 \nonumber \\
+  &+ \scrR \frac{1}{\rho_0}\exp{(-\ln \rho_1)}\vec{\scrD}_1\cdot(E).
+\end{align}
+The last term is
+\begin{equation}
+  \scrR = \frac{\mu}{\rho_c u_c L_c}.
+\end{equation}
+If we play the same linearization games with the diffusion term:
+\begin{equation}
+\scrR \frac{1}{\rho_0}\exp{(-\ln \rho_1)}\vec{\scrD}_1\cdot(E)
+= \scrR \frac{1}{\rho_0}\vec{\scrD}_1\cdot(E)
+\scrR \frac{1}{\rho_0}\left[\exp{(-\ln \rho_1)}-1\right]\vec{\scrD}_1\cdot(E).
+\end{equation}
+Taking $\Upsilon = \ln \rho_1$:
+\begin{align}
+  \partial_t \vec{u}  +
+  c_P \mathrm{Ma}^2 \del\left[h_0 \theta\right] &- c_P \mathrm{Ma}^2 (h_0 \del s_0)\theta - c_P \mathrm{Ma}^2 h_0 \del s_1
+  - \scrR \frac{1}{\rho_0}\vec{\scrD}_1\cdot(E) = \nonumber \\
+  &- \vec{u}\cdot \del\vec{u}
+  - c_P \mathrm{Ma}^2 \del\left[h_0\left(\expm{(\theta)} \nonumber -\theta \right)\right] \nonumber \\
+  & + c_P \mathrm{Ma}^2 (h_0 \del s_0)\left[\expm{(\theta)} -\theta\right]
+  + c_P \mathrm{Ma}^2 h_0 \left[\expm{(\theta)}\right] \del s_1 \nonumber \\
+  &+ \scrR \frac{1}{\rho_0}\left[\expm{(\Upsilon)}\right]\vec{\scrD}_1\cdot(E).
+\end{align}
+
+\end{document}
+
+\newpage
+
+Collectively, this leads to a momentum equation with:
 \begin{equation}
   \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del\left[h_0\left(\exp{(\ln h_1)}-1\right)\right] = \frac{h_0}{c_P}\exp{(\ln h_1)}\del s + \frac{h_0}{c_P}\left(\exp{(\ln h_1)}-1\right)\del s_0 + \frac{\mu}{\rho}\vec{\scrD}_1\cdot(E),
 \end{equation}
