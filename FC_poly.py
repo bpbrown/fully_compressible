@@ -234,9 +234,13 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
 problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), Coeff(Conv(scale*(-dot(u, grad(Υ))) ,zb)) ))
-problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ) - h0*grad(s) - h0*θ*grad(s0)) \
+# check signs of terms in next equation for grad(h) terms...
+problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
+                      - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
                       -μ*ρ0_inv*viscous_terms + P1*τu1 + P2*τu2),
-                      Coeff(Conv(scale*(-dot(u,grad(u)) + Ma2*cP*(-1*grad(h0*(exp(θ)-1-θ)) + h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ),zb)) )) # \
+                      Coeff(Conv(scale*(-dot(u,grad(u)) \
+                                - Ma2*cP*(grad(h0*(exp(θ)-1-θ))) \
+                                + Ma2*cP*(h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ),zb)) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + P2*τs2),
                       Coeff(Conv(scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))),zb)) )) # need VH and nonlinear density effects on diffusion
