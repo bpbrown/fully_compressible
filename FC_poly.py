@@ -44,7 +44,6 @@ args = docopt(__doc__)
 from fractions import Fraction
 
 from dedalus.tools.parsing import split_equation
-from dedalus.extras.flow_tools import GlobalArrayReducer
 from dedalus.extras import flow_tools
 
 import sys
@@ -122,10 +121,11 @@ n_h = float(args['--n_h'])
 Lz = -1/h_slope*(1-np.exp(-n_h))
 Lx = float(args['--aspect'])*Lz
 
+dealias = 2
 c = de.coords.CartesianCoordinates('x', 'z')
 d = de.distributor.Distributor((c,))
-xb = de.basis.RealFourier(c.coords[0], size=nx, bounds=(0, Lx))
-zb = de.basis.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz))
+xb = de.basis.RealFourier(c.coords[0], size=nx, bounds=(0, Lx), dealias=dealias)
+zb = de.basis.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz), dealias=dealias)
 x = xb.local_grid(1)
 z = zb.local_grid(1)
 
@@ -138,6 +138,7 @@ u = de.field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.float64, tensorsig=
 # Taus
 #zb1 = de.basis.ChebyshevU(c.coords[1], size=nz, bounds=(0, Lz))
 #zb1 = de.basis.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz))
+zbr = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb1 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 #zb1 = de.basis.ChebyshevV(c.coords[1], size=nz, bounds=(0, Lz))
 τs1 = de.field.Field(name='τs1', dist=d, bases=(xb,), dtype=np.float64)
@@ -169,12 +170,6 @@ integ = lambda A, C : de.operators.Integrate(A, C)
 Coeff = de.operators.Coeff
 Conv = de.operators.Convert
 
-o = de.field.Field(name='s', dist=d, bases=(xb,zb), dtype=np.float64)
-o['g'] = 1
-# o_int = integ(integ(o,'x'),'z').evaluate()
-# if rank == 0:
-#     logger.warning(o_int['g'])
-
 ex = de.field.Field(name='ex', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
 ez = de.field.Field(name='ez', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
 ex['g'][0] = 1
@@ -188,14 +183,9 @@ h0['g'] = h_bot+h_slope*z
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
 ρ0_inv = exp(-Υ0).evaluate()
 
-logger.info("h0: {}".format(h0['g']))
-for f in [θ0, Υ0, s0]:
+for f in [h0, θ0, Υ0, s0]:
     logger.info("{:} ranges from {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
 
-s0_2 = de.field.Field(name='s0_2', dist=d, bases=(zb,), dtype=np.float64)
-Υ0_2 = de.field.Field(name='Υ0_2', dist=d, bases=(zb,), dtype=np.float64)
-s0_2['g'] = s0['g']
-Υ0_2['g'] = Υ0['g']
 
 # stress-free bcs
 #u_perp_inner = radial(angular(e(r=r_inner)))
@@ -217,8 +207,8 @@ Pr = 1
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
-Ra_bot = (1/(μ*κ*cP)*exp(Υ0_2)(z=0)).evaluate()['g']
-Ra_top = (1/(μ*κ*cP)*exp(Υ0_2)(z=Lz)).evaluate()['g']
+Ra_bot = (1/(μ*κ*cP)*exp(Υ0)(z=0)).evaluate()['g']
+Ra_top = (1/(μ*κ*cP)*exp(Υ0)(z=Lz)).evaluate()['g']
 
 if rank ==0:
     logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
@@ -226,6 +216,7 @@ if rank ==0:
     logger.info("Δs = {:.2g}".format(s_bot[0][0]-s_top[0][0]))
 
 scale = de.field.Field(name='scale', dist=d, bases=(zb,), dtype=np.float64)
+scale.require_scales(dealias)
 scale['g'] = h0['g']
 
 for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
@@ -233,17 +224,21 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)), Coeff(Conv(scale*(-dot(u, grad(Υ))) ,zb)) ))
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)),
+                      Coeff(Conv(scale*(-dot(u, grad(Υ))) ,zbr)) ))
 # check signs of terms in next equation for grad(h) terms...
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
                       - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
-                      -μ*ρ0_inv*viscous_terms + P1*τu1 + P2*τu2),
-                      Coeff(Conv(scale*(-dot(u,grad(u)) \
+                      - μ*ρ0_inv*viscous_terms \
+                      + P1*τu1 + μ*P2*τu2),
+                      Coeff(Conv(
+                      scale*(-dot(u,grad(u)) \
                                 - Ma2*cP*(grad(h0*(exp(θ)-1-θ))) \
-                                + Ma2*cP*(h0*(exp(θ)-1)*grad(s) + h0*(exp(θ)-1-θ)*grad(s0)) ),zb)) )) # \
+                                + Ma2*cP*(h0*(exp(θ)-1)*grad(s) + h0*grad(s0)*(exp(θ)-1-θ)) ),zbr)) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + P2*τs2),
-                      Coeff(Conv(scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))),zb)) )) # need VH and nonlinear density effects on diffusion
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + κ*ρ0_inv*P2*τs2),
+                      Coeff(Conv(
+                      scale*(-dot(u,grad(s)) + κ*dot(grad(θ),grad(θ)) ),zbr)) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
@@ -285,33 +280,17 @@ cfl_cadence = 1
 cfl_threshold = 0.1
 max_Δt = Δt = 10
 
-# CFL = flow_tools.CFL(solver, initial_dt=Δt, cadence=cfl_cadence, safety=cfl_safety_factor,
-#                      max_change=1.5, min_change=0.5, max_dt=max_Δt, threshold=cfl_threshold)
-# CFL.add_velocities(('u', 'w'))
+dt = 1
+cfl = flow_tools.CFL(solver, dt, safety=cfl_safety_factor, cadence=cfl_cadence, threshold=cfl_threshold,
+                     max_change=1.5, min_change=0.5, max_dt=max_Δt)
+cfl.add_velocity(u)
 
-KE = 0.5*exp(Υ0_2+Υ)*dot(u,u)
-IE = cP*Ma2*h0*exp(θ)*(s+s0_2)
-Re = exp(Υ0_2+Υ)*sqrt(dot(u,u))/μ
-
-reducer = GlobalArrayReducer(d.comm_cart)
-
-dz = Lz/nz #np.gradient(z, axis=1)
-dx = Lx/nx
-
-def compute_dt(dt_old, threshold=0.1, dt_max=1e-2, safety=0.4):
-  local_freq = np.abs(u['g'][1]/dz) + np.abs(u['g'][0]/dx)
-  global_freq = reducer.global_max(local_freq)
-  if global_freq == 0.:
-      dt = np.inf
-  else:
-      dt = 1 / global_freq
-  dt *= safety
-  if dt > dt_max: dt = dt_max
-  if dt < dt_old*(1+threshold) and dt > dt_old*(1-threshold): dt = dt_old
-  return dt
+KE = 0.5*exp(Υ0+Υ)*dot(u,u)
+IE = cP*Ma2*h0*exp(θ)*(s+s0)
+Re = exp(Υ0+Υ)*sqrt(dot(u,u))/μ
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.125,max_writes=20)
-slice_output.add_task(s+s0_2, name='s+s0')
+slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
 #slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
@@ -340,7 +319,6 @@ if rank == 0:
 
 
 report_cadence = 10
-#print(vol_avg(o))
 good_solution = True
 KE_avg = 0
 
@@ -387,7 +365,7 @@ while solver.ok and good_solution:
                 scalar_f['tasks/'+key][scalar_index] = scalar_data[key]
             scalar_index += 1
             scalar_f.close()
-    Δt = compute_dt(Δt, dt_max=max_Δt, safety=cfl_safety_factor, threshold=cfl_threshold)
+    Δt = cfl.compute_dt()
     good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)
 if not good_solution:
     logger.info("simulation terminated with good_solution = {}".format(good_solution))
