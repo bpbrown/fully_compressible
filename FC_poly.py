@@ -18,6 +18,7 @@ Options:
 
     --safety=<safety>                    CFL safety factor
     --SBDF2                              Use SBDF2
+    --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
@@ -116,6 +117,7 @@ with Sync() as sync:
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
 h_slope = -1/(1+m)
+grad_φ = (γ-1)/γ
 
 n_h = float(args['--n_h'])
 Lz = -1/h_slope*(1-np.exp(-n_h))
@@ -177,15 +179,17 @@ ez['g'][1] = 1
 
 h0 = de.field.Field(name='h0', dist=d, bases=(zb,), dtype=np.float64)
 
+ln_cP = np.log(cP)
 h0['g'] = h_bot+h_slope*z
 θ0 = log(h0).evaluate()
-Υ0 = (m*θ0).evaluate()
+Υ0 = (m*(θ0)).evaluate() # normalize to zero at bottom
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
 ρ0_inv = exp(-Υ0).evaluate()
 
-for f in [h0, θ0, Υ0, s0]:
-    logger.info("{:} ranges from {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
-
+check_HS=False
+if check_HS:
+    # hydrostatic balance check
+    print(np.max(np.abs((grad(θ0) - grad(s0)  + exp(-θ0)*grad_φ*ez).evaluate()['g'])))
 
 # stress-free bcs
 #u_perp_inner = radial(angular(e(r=r_inner)))
@@ -199,7 +203,7 @@ trace_e = trace(e)
 trace_e.store_last = True
 Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 
-Ma2 = ε
+Ma2 = 1 #ε
 Pr = 1
 
 μ = float(args['--mu'])
@@ -210,11 +214,18 @@ s_top = s0(z=Lz).evaluate()['g']
 Ra_bot = (1/(μ*κ*cP)*exp(Υ0)(z=0)).evaluate()['g']
 Ra_top = (1/(μ*κ*cP)*exp(Υ0)(z=Lz)).evaluate()['g']
 
+Υ_bot = Υ0(z=0).evaluate()['g']
+Υ_top = Υ0(z=Lz).evaluate()['g']
+
+θ_bot = θ0(z=0).evaluate()['g']
+θ_top = θ0(z=Lz).evaluate()['g']
+
 if rank ==0:
     logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
     logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
-    logger.info("Δs = {:.2g}".format(s_bot[0][0]-s_top[0][0]))
-
+    logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0][0]-s_top[0][0],s_bot[0][0],s_top[0][0]))
+    logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0][0]-θ_top[0][0],θ_bot[0][0],θ_top[0][0]))
+    logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0][0]-Υ_top[0][0],Υ_bot[0][0],Υ_top[0][0]))
 scale = de.field.Field(name='scale', dist=d, bases=(zb,), dtype=np.float64)
 scale.require_scales(dealias)
 scale['g'] = h0['g']
@@ -225,20 +236,21 @@ for ncc in [grad(Υ0), grad(h0), h0, exp(-Υ0), grad(s0)]:
 # Υ = ln(ρ), θ = ln(h)
 problem = problems.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
 problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) - P1*dot(ez,τu2)),
-                      Coeff(Conv(scale*(-dot(u, grad(Υ))) ,zbr)) ))
+                      #Coeff(Conv(
+                      scale*(-dot(u, grad(Υ))) ))#,zbr)) ))
 # check signs of terms in next equation for grad(h) terms...
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
                       - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
                       - μ*ρ0_inv*viscous_terms \
                       + P1*τu1 + μ*P2*τu2),
-                      Coeff(Conv(
+                      #Coeff(Conv(
                       scale*(-dot(u,grad(u)) \
                                 - Ma2*cP*(grad(h0*(exp(θ)-1-θ))) \
-                                + Ma2*cP*(h0*(exp(θ)-1)*grad(s) + h0*grad(s0)*(exp(θ)-1-θ)) ),zbr)) )) # \
+                                + Ma2*cP*(h0*(exp(θ)-1)*grad(s) + h0*grad(s0)*(exp(θ)-1-θ))) )) #,zbr)) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + P1*τs1 + κ*ρ0_inv*P2*τs2),
-                      Coeff(Conv(
-                      scale*(-dot(u,grad(s)) + κ*dot(grad(θ),grad(θ)) ),zbr)) )) # need VH and nonlinear density effects on diffusion
+                      #Coeff(Conv(
+                      scale*(-dot(u,grad(s)) + κ*dot(grad(θ),grad(θ))) )) #,zbr)) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
@@ -278,10 +290,9 @@ solver.stop_iteration = run_time_iter
 
 cfl_cadence = 1
 cfl_threshold = 0.1
-max_Δt = Δt = 10
+Δt = max_Δt = float(args['--max_dt'])
 
-dt = 1
-cfl = flow_tools.CFL(solver, dt, safety=cfl_safety_factor, cadence=cfl_cadence, threshold=cfl_threshold,
+cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=cfl_cadence, threshold=cfl_threshold,
                      max_change=1.5, min_change=0.5, max_dt=max_Δt)
 cfl.add_velocity(u)
 
