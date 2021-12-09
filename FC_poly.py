@@ -279,6 +279,10 @@ KE = 0.5*np.exp(Υ0+Υ)*dot(u,u)
 IE = cP*Ma2*h0*np.exp(θ)*(s+s0)
 Re = np.exp(Υ0+Υ)*np.sqrt(dot(u,u))/μ
 ω = -div(skew(u))
+KE.store_last = True
+IE.store_last = True
+Re.store_last = True
+ω.store_last = True
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.125,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
@@ -308,8 +312,8 @@ flow.add_property(τu2, name='τu2')
 flow.add_property(τs1, name='τs1')
 flow.add_property(τs2, name='τs2')
 
-
-while solver.ok and good_solution:
+KE_avg = 0
+while solver.proceed and good_solution:
     # advance
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
@@ -321,13 +325,18 @@ while solver.ok and good_solution:
         τu2_max = flow.max('τu2')
         τs1_max = flow.max('τs1')
         τs2_max = flow.max('τs2')
+        τ_max = np.max([τu1_max,τu2_max,τs1_max,τs2_max])
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
-        log_string += ' |τs| ({:.2g} {:.2g} {:.2g} {:.2g})'.format(τu1_max, τu2_max, τs1_max, τs2_max)
+        log_string += ' |τ|= {:.2g}'.format(τ_max)
         logger.info(log_string)
-    Δt = cfl.compute_dt()
+    Δt = cfl.compute_timestep()
     good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)
+
 if not good_solution:
     logger.info("simulation terminated with good_solution = {}".format(good_solution))
     logger.info("Δt = {}".format(Δt))
     logger.info("KE = {}".format(KE_avg))
     logger.info("τu = {}".format((τu1_max,τu2_max,τs1_max,τs2_max)))
+
+solver.log_stats()
+logger.debug("mode-stages/DOF = {}".format(solver.total_modes/(nx*nz)))
