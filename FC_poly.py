@@ -95,6 +95,9 @@ config['logging']['file_level'] = 'DEBUG'
 import logging
 logger = logging.getLogger(__name__)
 
+dlog = logging.getLogger('evaluator')
+dlog.setLevel(logging.WARNING)
+
 logger.info(args)
 logger.info("saving data in: {}".format(data_dir))
 
@@ -135,10 +138,10 @@ s = d.Field(name='s', bases=b)
 u = d.VectorField(c, name='u', bases=b)
 
 # Taus
-zbr = zb.clone_with(a=zb.a+1, b=zb.b+1)
-zb1 = zb.clone_with(a=zb.a+2, b=zb.b+2)
-lift_basis = zb.clone_with(a=zb.a+2, b=zb.b+2)
-lift = lambda A, n: de.LiftTau(A, lift_basis, n)
+zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
+zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
+lift1 = lambda A, n: de.LiftTau(A, zb1, n)
+lift = lambda A, n: de.LiftTau(A, zb2, n)
 τs1 = d.Field(name='τs1', bases=xb)
 τs2 = d.Field(name='τs2', bases=xb)
 τu1 = d.VectorField(c, name='τu1', bases=(xb,))
@@ -181,7 +184,6 @@ s0.name = 's0'
 ρ0_inv = np.exp(-Υ0).evaluate()
 ρ0_inv.name = 'ρ0_inv'
 
-
 # stress-free bcs
 e = grad(u) + trans(grad(u))
 e.store_last = True
@@ -214,28 +216,34 @@ if rank ==0:
     logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0][0]-s_top[0][0],s_bot[0][0],s_top[0][0]))
     logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0][0]-θ_top[0][0],θ_bot[0][0],θ_top[0][0]))
     logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0][0]-Υ_top[0][0],Υ_bot[0][0],Υ_top[0][0]))
-scale = d.Field(name='scale', bases=zb)
+scale = d.Field(name='scale', bases=zb2)
 scale.require_scales(dealias)
 scale['g'] = h0['g']
+
+h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
+h0_grad_s0_g.name = 'h0_grad_s0_g'
+h0_g = de.Grid(h0).evaluate()
+h0_g.name = 'h0_g'
+
 
 for ncc in [grad(Υ0), grad(h0), h0, np.exp(-Υ0), grad(s0)]:
     logger.info('scaled {:} has  {:} terms'.format(ncc,(np.abs((scale*ncc).evaluate()['c'])>ncc_cutoff).sum()))
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))) + dot(lift(τu2,-1),ez),
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0)) + dot(lift(τu2,-1),ez)),
                       scale*(-dot(u, grad(Υ))) ))
 # check signs of terms in next equation for grad(h) terms...
 problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
                       - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
-                      - μ*ρ0_inv*viscous_terms) \
-                      + lift(τu2,-2) + lift(τu1,-1),
+                      - μ*ρ0_inv*viscous_terms \
+                      + lift(τu2,-2) + lift(τu1,-1)),
                       scale*(-dot(u,grad(u)) \
                                 - Ma2*cP*(grad(h0*(np.exp(θ)-1-θ))) \
-                                + Ma2*cP*(h0*(np.exp(θ)-1)*grad(s) + h0*grad(s0)*(np.exp(θ)-1-θ))) )) # \
+                                + Ma2*cP*(h0_g*(np.exp(θ)-1)*grad(s) + h0_grad_s0_g*(np.exp(θ)-1-θ))) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ)) + lift(τs2,-2) + lift(τs1,-1),
-                      scale*(-dot(u,grad(s)) + κ*dot(grad(θ),grad(θ))) )) #,zbr)) )) # need VH and nonlinear density effects on diffusion
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + lift(τs2,-2) + lift(τs1,-1)),
+                      scale*(-dot(u,grad(s)) + κ*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
