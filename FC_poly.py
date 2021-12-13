@@ -9,7 +9,6 @@ Options:
     --Rayleigh=<Rayleigh>                Rayleigh number (not used) [default: 1e4]
     --mu=<mu>                            Viscosity [default: 0.0015]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
-    --n_rho=<n_rho>                      Density scale heights across unstable layer (not used) [default: 0.5]
     --n_h=<n_h>                          Enthalpy scale heights [default: 0.5]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0.5]
     --m=<m>                              Polytopic index of our polytrope
@@ -34,8 +33,8 @@ Options:
 
 import numpy as np
 from mpi4py import MPI
-import time
 rank = MPI.COMM_WORLD.rank
+from dedalus.tools.parallel import Sync
 
 from docopt import docopt
 args = docopt(__doc__)
@@ -45,6 +44,12 @@ import sys
 import os
 import pathlib
 import h5py
+
+import logging
+logger = logging.getLogger(__name__)
+
+dlog = logging.getLogger('evaluator')
+dlog.setLevel(logging.WARNING)
 
 ncc_cutoff = float(args['--ncc_cutoff'])
 
@@ -82,28 +87,15 @@ else:
 cP = γ/(γ-1)
 
 data_dir = sys.argv[0].split('.py')[0]
-#data_dir += "_nh{}_Ra{}_Pr{}".format(args['--n_h'], args['--Rayleigh'], args['--Prandtl'])
 data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
-data_dir += "_nz{:d}".format(nz)
+data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
 
 from dedalus.tools.config import config
 config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
 config['logging']['file_level'] = 'DEBUG'
-import logging
-logger = logging.getLogger(__name__)
-
-dlog = logging.getLogger('evaluator')
-dlog.setLevel(logging.WARNING)
-
-logger.info(args)
-logger.info("saving data in: {}".format(data_dir))
-
-import dedalus.public as de
-from dedalus.tools.parallel import Sync
-from dedalus.extras import flow_tools
 
 with Sync() as sync:
     if sync.comm.rank == 0:
@@ -112,6 +104,13 @@ with Sync() as sync:
         logdir = os.path.join(data_dir,'logs')
         if not os.path.exists(logdir):
             os.mkdir(logdir)
+
+import dedalus.public as de
+from dedalus.extras import flow_tools
+
+logger.info(args)
+logger.info("saving data in: {}".format(data_dir))
+
 
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
@@ -160,6 +159,7 @@ dt = lambda A: de.TimeDerivative(A)
 
 integ = lambda A: de.Integrate(de.Integrate(A, 'x'), 'z')
 avg = lambda A: integ(A)/(Lx*Lz)
+#x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 
 from dedalus.core.operators import Skew
@@ -201,8 +201,12 @@ Pr = 1
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
-Ra_bot = (1/(μ*κ*cP)*np.exp(Υ0)(z=0)).evaluate()['g']
-Ra_top = (1/(μ*κ*cP)*np.exp(Υ0)(z=Lz)).evaluate()['g']
+delta_s = s_bot-s_top
+g = m+1
+pre = g*(delta_s)*Lz**3
+Ra_bot = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=0)).evaluate()['g']
+Ra_mid = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
+Ra_top = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
 
 Υ_bot = Υ0(z=0).evaluate()['g']
 Υ_top = Υ0(z=Lz).evaluate()['g']
@@ -212,6 +216,7 @@ Ra_top = (1/(μ*κ*cP)*np.exp(Υ0)(z=Lz)).evaluate()['g']
 
 if rank ==0:
     logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
+    logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz/2, Ra_mid[0][0]))
     logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
     logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0][0]-s_top[0][0],s_bot[0][0],s_top[0][0]))
     logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0][0]-θ_top[0][0],θ_bot[0][0],θ_top[0][0]))
@@ -263,8 +268,6 @@ noise.low_pass_filter(scales=0.25)
 s['g'] = noise['g']*np.sin(np.pi*z/Lz)
 Υ['g'] = -γ/(γ-1)*s['g']
 θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
-for f in [s,Υ,θ]:
-    logger.info("{}: {:.2g}--{:.2g}".format(f, np.min(f['g']), np.max(f['g'])))
 
 if args['--SBDF2']:
     ts = de.SBDF2
@@ -283,25 +286,31 @@ cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold
                      max_change=1.5, min_change=0.5, max_dt=max_Δt)
 cfl.add_velocity(u)
 
-KE = 0.5*np.exp(Υ0+Υ)*dot(u,u)
-IE = cP*Ma2*h0*np.exp(θ)*(s+s0)
-Re = np.exp(Υ0+Υ)*np.sqrt(dot(u,u))/μ
+ρ = np.exp(Υ0+Υ)
+h = h0*np.exp(θ)
+KE = 0.5*ρ*dot(u,u)
+IE = cP*Ma2*h*(s+s0)
+Re = (ρ/μ)*np.sqrt(dot(u,u))
 ω = -div(skew(u))
 KE.store_last = True
 IE.store_last = True
 Re.store_last = True
 ω.store_last = True
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/snapshots',sim_dt=0.125,max_writes=20)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=0.125,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
-#slice_output.add_task(dot(curl(u),curl(u)), name='enstrophy')
+slice_output.add_task(ω, name='vorticity')
+slice_output.add_task(ω**2, name='enstrophy')
+slice_output.add_task(x_avg(-κ*dot(grad(h),ez)/cP), name='F_κ')
+slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE')
+slice_output.add_task(x_avg(dot(u,ez)*h), name='F_h')
 
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=np.inf)
-traces.add_task(avg(KE), name='KE')
-traces.add_task(avg(IE), name='IE')
-traces.add_task(avg(Re), name='Re')
+# traces.add_task(avg(KE), name='KE')
+# traces.add_task(avg(IE), name='IE')
+# traces.add_task(avg(Re), name='Re')
 traces.add_task(avg(ω**2), name='enstrophy')
 traces.add_task(x_avg(np.sqrt(dot(τu1,τu1))), name='τu1')
 traces.add_task(x_avg(np.sqrt(dot(τu2,τu2))), name='τu2')
@@ -312,9 +321,9 @@ report_cadence = 10
 good_solution = True
 
 flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
-flow.add_property(Re, name='Re')
-flow.add_property(KE, name='KE')
-flow.add_property(IE, name='IE')
+# flow.add_property(Re, name='Re')
+# flow.add_property(KE, name='KE')
+# flow.add_property(IE, name='IE')
 flow.add_property(τu1, name='τu1')
 flow.add_property(τu2, name='τu2')
 flow.add_property(τs1, name='τs1')
@@ -325,17 +334,18 @@ while solver.proceed and good_solution:
     # advance
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
-        KE_avg = flow.grid_average('KE')
-        IE_avg = flow.grid_average('IE')
-        Re_avg = flow.grid_average('Re')
-        Re_max = flow.max('Re')
+        # KE_avg = flow.grid_average('KE')
+        # IE_avg = flow.grid_average('IE')
+        # Re_avg = flow.grid_average('Re')
+        # Re_max = flow.max('Re')
         τu1_max = flow.max('τu1')
         τu2_max = flow.max('τu2')
         τs1_max = flow.max('τs1')
         τs2_max = flow.max('τs2')
         τ_max = np.max([τu1_max,τu2_max,τs1_max,τs2_max])
-        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}, KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(solver.iteration, solver.sim_time, Δt, KE_avg, IE_avg, Re_avg, Re_max)
-        log_string += ' |τ|= {:.2g}'.format(τ_max)
+        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}'.format(solver.iteration, solver.sim_time, Δt)
+        # log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(KE_avg, IE_avg, Re_avg, Re_max)
+        log_string += ', τ: {:.2g}'.format(τ_max)
         logger.info(log_string)
     Δt = cfl.compute_timestep()
     good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)
