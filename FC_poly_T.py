@@ -131,7 +131,7 @@ x = xb.local_grid(1)
 z = zb.local_grid(1)
 
 # Fields
-θ = d.Field(name='θ', bases=b)
+T = d.Field(name='T', bases=b)
 Υ = d.Field(name='Υ', bases=b)
 s = d.Field(name='s', bases=b)
 u = d.VectorField(c, name='u', bases=b)
@@ -175,6 +175,8 @@ h0 = d.Field(name='h0', bases=zb)
 
 ln_cP = np.log(cP)
 h0['g'] = h_bot+h_slope*z
+T0 = h0.evaluate() #(h0/cP).evaluate()
+T0.name = 'T0'
 θ0 = np.log(h0).evaluate()
 θ0.name = 'θ0'
 Υ0 = (m*(θ0)).evaluate() # normalize to zero at bottom
@@ -202,6 +204,8 @@ s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
 delta_s = s_bot-s_top
+delta_s_2 = ε*np.log(1+Lz)
+logger.info('delta_s = {:}, {:}'.format(delta_s, delta_s_2))
 g = m+1
 pre = g*(delta_s)*Lz**3
 Ra_bot = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=0)).evaluate()['g']
@@ -214,16 +218,21 @@ Ra_top = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
 θ_bot = θ0(z=0).evaluate()['g']
 θ_top = θ0(z=Lz).evaluate()['g']
 
+T_bot = T0(z=0).evaluate()['g']
+T_top = T0(z=Lz).evaluate()['g']
+
+
 if rank ==0:
     logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
     logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz/2, Ra_mid[0][0]))
     logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
     logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0][0]-s_top[0][0],s_bot[0][0],s_top[0][0]))
     logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0][0]-θ_top[0][0],θ_bot[0][0],θ_top[0][0]))
+    logger.info("ΔT = {:.2g} ({:.2g} to {:.2g})".format(T_bot[0][0]-T_top[0][0],T_bot[0][0],T_top[0][0]))
     logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0][0]-Υ_top[0][0],Υ_bot[0][0],Υ_top[0][0]))
 scale = d.Field(name='scale', bases=zb2)
 scale.require_scales(dealias)
-scale['g'] = 1 #h0['g']
+scale['g'] = T0['g']
 
 h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 h0_grad_s0_g.name = 'h0_grad_s0_g'
@@ -231,29 +240,23 @@ h0_g = de.Grid(h0).evaluate()
 h0_g.name = 'h0_g'
 
 
-for ncc in [grad(Υ0), grad(h0), h0, np.exp(-Υ0), grad(s0)]:
+for ncc in [grad(Υ0), grad(T0), T0, np.exp(-Υ0), ρ0_inv]:
     logger.info('scaled {:} has  {:} terms'.format(ncc,(np.abs((scale*ncc).evaluate()['c'])>ncc_cutoff).sum()))
 
 # Υ = ln(ρ), θ = ln(h)
-problem = de.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))) + dot(lift(τu2,-1),ez),
+problem = de.IVP([Υ, u, T, τu1, τu2, τs1, τs2])
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))), # + dot(lift(τu2,-1),ez),
                       scale*(-dot(u, grad(Υ))) ))
-# check signs of terms in next equation for grad(h) terms...
-problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
-                      - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
+problem.add_equation((scale*(dt(u) + grad(T) \
+                      + T*grad(Υ0) + T0*grad(Υ)
                       - μ*ρ0_inv*viscous_terms) \
                       + lift(τu2,-2) + lift(τu1,-1),
-                      scale*(-dot(u,grad(u)) \
-                                - Ma2*cP*(grad(h0*(np.expm1(θ)-θ))) \
-                                + Ma2*cP*(h0_g*np.expm1(θ)*grad(s) + h0_grad_s0_g*(np.expm1(θ)-θ))) )) # \
-#                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + lift(τs2,-2) + lift(τs1,-1),
-                      scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
-                      #  κ*exp(-Υ0)*(exp(-Υ)-1)*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
-problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
-problem.add_equation((θ(z=0), 0))
+                      scale*(-dot(u,grad(u)) - T*grad(Υ)) )) # need nonlinear density effects on viscous terms
+problem.add_equation((scale*(dt(T) + dot(u,grad(T0)) + T0*(γ-1)*div(u) - κ*ρ0_inv*lap(T)) + lift(τs2,-2) + lift(τs1,-1),
+                      scale*(-dot(u,grad(T)) - T*(γ-1)*div(u)) )) # need VH and nonlinear density effects on diffusion
+problem.add_equation((T(z=0), 0))
 problem.add_equation((u(z=0), 0))
-problem.add_equation((θ(z=Lz), 0))
+problem.add_equation((T(z=Lz), 0))
 problem.add_equation((u(z=Lz), 0))
 logger.info("Problem built")
 
@@ -265,9 +268,11 @@ noise = d.Field(name='noise', bases=b)
 noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
-s['g'] = noise['g']*np.sin(np.pi*z/Lz)
-Υ['g'] = -γ/(γ-1)*s['g']
-θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
+# s['g'] = noise['g']*np.sin(np.pi*z/Lz)
+# Υ['g'] = -γ/(γ-1)*s['g']
+# T['g'] = np.exp(γ*s['g']) + np.exp((γ-1)*Υ['g'])
+T0.require_scales(1)
+T['g'] = noise['g']*np.sin(np.pi*z/Lz)*T0['g']
 
 if args['--SBDF2']:
     ts = de.SBDF2
@@ -287,7 +292,7 @@ cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold
 cfl.add_velocity(u)
 
 ρ = np.exp(Υ0+Υ).evaluate()
-h = h0*np.exp(θ).evaluate()
+h = cP*(T+T0)
 KE = 0.5*ρ*dot(u,u)
 IE = cP*Ma2*h*(s+s0)
 Re = (ρ/μ)*np.sqrt(dot(u,u))
@@ -297,10 +302,10 @@ IE.store_last = True
 Re.store_last = True
 ω.store_last = True
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=0.125,max_writes=20)
+slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=0.25,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
-slice_output.add_task(θ, name='θ')
+slice_output.add_task(T, name='T')
 slice_output.add_task(ω, name='vorticity')
 slice_output.add_task(ω**2, name='enstrophy')
 slice_output.add_task(x_avg(-κ*dot(grad(h),ez)/cP), name='F_κ')
