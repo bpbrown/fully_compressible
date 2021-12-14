@@ -170,6 +170,8 @@ ex = d.VectorField(c, name='ex', bases=zb)
 ez = d.VectorField(c, name='ez', bases=zb)
 ex['g'][0] = 1
 ez['g'][1] = 1
+ez2 = d.VectorField(c, name='ez2', bases=zb2)
+ez2['g'][1] = 1
 
 h0 = d.Field(name='h0', bases=zb)
 
@@ -245,14 +247,15 @@ for ncc in [grad(Υ0), grad(T0), T0, np.exp(-Υ0), ρ0_inv]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([Υ, u, T, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))), # + dot(lift(τu2,-1),ez),
+problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))) + dot(lift(τu2,-1),ez2), # + dot(lift(τu2,-1),ez),
                       scale*(-dot(u, grad(Υ))) ))
 problem.add_equation((scale*(dt(u) + grad(T) \
                       + T*grad(Υ0) + T0*grad(Υ)
                       - μ*ρ0_inv*viscous_terms) \
                       + lift(τu2,-2) + lift(τu1,-1),
                       scale*(-dot(u,grad(u)) - T*grad(Υ)) )) # need nonlinear density effects on viscous terms
-problem.add_equation((scale*(dt(T) + dot(u,grad(T0)) + T0*(γ-1)*div(u) - κ*ρ0_inv*lap(T)) + lift(τs2,-2) + lift(τs1,-1),
+problem.add_equation((scale*(dt(T) + dot(u,grad(T0)) + T0*(γ-1)*div(u) - κ*ρ0_inv*lap(T)) \
+                      + lift(τs2,-2) + lift(τs1,-1),
                       scale*(-dot(u,grad(T)) - T*(γ-1)*div(u)) )) # need VH and nonlinear density effects on diffusion
 problem.add_equation((T(z=0), 0))
 problem.add_equation((u(z=0), 0))
