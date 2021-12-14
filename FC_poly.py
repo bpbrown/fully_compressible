@@ -247,9 +247,9 @@ problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
                                 - Ma2*cP*(grad(h0*(np.exp(θ)-1-θ))) \
                                 + Ma2*cP*(h0_g*(np.exp(θ)-1)*grad(s) + h0_grad_s0_g*(np.exp(θ)-1-θ))) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*lap(θ) + lift(τs2,-2) + lift(τs1,-1)),
-                      scale*(-dot(u,grad(s)) + κ*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
-                      #  κ*exp(-Υ0)*(exp(-Υ)-1)*lap(θ) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*(lap(θ)+2*dot(grad(θ0),grad(θ))) + lift(τs2,-2) + lift(τs1,-1)),
+                      scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
+                      #  κ*exp(-Υ0)*(exp(-Υ)-1)*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((u(z=0), 0))
