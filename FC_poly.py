@@ -244,8 +244,8 @@ problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
                       - μ*ρ0_inv*viscous_terms \
                       + lift(τu2,-2) + lift(τu1,-1)),
                       scale*(-dot(u,grad(u)) \
-                                - Ma2*cP*(grad(h0*(np.exp(θ)-1-θ))) \
-                                + Ma2*cP*(h0_g*(np.exp(θ)-1)*grad(s) + h0_grad_s0_g*(np.exp(θ)-1-θ))) )) # \
+                                - Ma2*cP*(grad(h0*(np.expm1(θ)-θ))) \
+                                + Ma2*cP*(h0_g*np.expm1(θ)*grad(s) + h0_grad_s0_g*(np.expm1(θ)-θ))) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
 problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*(lap(θ)+2*dot(grad(θ0),grad(θ))) + lift(τs2,-2) + lift(τs1,-1)),
                       scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
