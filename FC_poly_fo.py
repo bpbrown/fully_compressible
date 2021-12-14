@@ -184,11 +184,14 @@ s0.name = 's0'
 ρ0_inv = np.exp(-Υ0).evaluate()
 ρ0_inv.name = 'ρ0_inv'
 
+grad_u = grad(u) + ez*lift(τu1,-1) # First-order reduction
+grad_θ = grad(θ) + ez*lift(τs1,-1) # First-order reduction
+
 # stress-free bcs
-e = grad(u) + trans(grad(u))
+e = grad_u + trans(grad_u)
 e.store_last = True
 
-viscous_terms = div(e) - 2/3*grad(div(u))
+viscous_terms = div(e) - 2/3*grad(trace(grad_u))
 trace_e = trace(e)
 trace_e.store_last = True
 Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
@@ -236,18 +239,18 @@ for ncc in [grad(Υ0), grad(h0), h0, np.exp(-Υ0), grad(s0)]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))) + dot(lift(τu2,-1),ez),
+problem.add_equation((scale*(dt(Υ) + trace(grad_u) + dot(u, grad(Υ0))),
                       scale*(-dot(u, grad(Υ))) ))
 # check signs of terms in next equation for grad(h) terms...
-problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
+problem.add_equation((scale*(dt(u) + Ma2*cP*(h0*grad_θ + θ*grad(h0)) \
                       - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
                       - μ*ρ0_inv*viscous_terms) \
-                      + lift(τu2,-2) + lift(τu1,-1),
+                      + lift(τu2,-1),
                       scale*(-dot(u,grad(u)) \
                                 - Ma2*cP*(grad(h0*(np.expm1(θ)-θ))) \
                                 + Ma2*cP*(h0_g*np.expm1(θ)*grad(s) + h0_grad_s0_g*(np.expm1(θ)-θ))) )) # \
 #                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + lift(τs2,-2) + lift(τs1,-1),
+problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*(div(grad_θ)+2*dot(grad(θ0),grad_θ))) + lift(τs2,-1),
                       scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
                       #  κ*exp(-Υ0)*(exp(-Υ)-1)*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
