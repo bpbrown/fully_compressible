@@ -30,6 +30,7 @@ def main(filename, start, count, tasks, output):
 
     # Plot writes
     with h5py.File(filename, mode='r') as f:
+        logger.info('reading file {:}'.format(filename))
         t = np.array(f['scales/sim_time'])
         for i, task in enumerate(tasks):
             time = t
@@ -76,9 +77,14 @@ if __name__ == "__main__":
 
     import pathlib
     from docopt import docopt
-    from dedalus.tools import logging
     from dedalus.tools import post
     from dedalus.tools.parallel import Sync
+    import logging
+    logger = logging.getLogger(__name__)
+
+    dlog = logging.getLogger('matplotlib')
+    dlog.setLevel(logging.WARNING)
+
 
     args = docopt(__doc__)
     tasks = args['--tasks'].split(',')
