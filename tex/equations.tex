@@ -47,7 +47,7 @@ From Geoff Vasil's "gauged" document, the fully compressible equations are:
   \partial_t \vec{u} + \vec{u}\cdot \del \vec{u} + \del (h + \phi) = T\del s + \vec{\scrD}_1\cdot(\nu E)
 \end{equation}
 \begin{equation}
-  \partial_t s + \vec{u}\cdot \del s = \frac{1}{T}\left[\vec{\scrD}_1 (\chi \del h) + \frac{\nu}{2}\mathrm{Tr}(E^2)\right]
+  \partial_t s + \vec{u}\cdot \del s = \frac{1}{c_p T}\left[\vec{\scrD}_1 (\chi \del h) + \frac{\nu}{2}\mathrm{Tr}(E^2)\right]
 \end{equation}
 with
 \begin{equation}
@@ -83,7 +83,7 @@ The form above is best if $\chi$ is constant in time.  If we instead take $\kapp
 \end{align}
 or, taking $\mu = \nu \rho$:
 \begin{equation}
-  \left(\partial_t \frac{s}{c_P} + \vec{u}\cdot \del \frac{s}{c_P}\right) = \frac{\kappa}{\rho}\left[\nabla^2 \ln h + \left(\nabla \ln h\right)^2\right] + \exp{(-\ln h)}\exp{(-\ln \rho)}\frac{\mu}{2}\mathrm{Tr}(E^2),
+  \left(\partial_t \frac{s}{c_P} + \vec{u}\cdot \del \frac{s}{c_P}\right) = \kappa\exp{(-\ln \rho)}\left[\nabla^2 \ln h + \left(\nabla \ln h\right)^2\right] + \exp{(-\ln h)}\exp{(-\ln \rho)}\frac{\mu}{2}\mathrm{Tr}(E^2),
 \end{equation}
 which now has two exponentials in the viscous heating term, but again that term is always going to be RHS anyways.  We've also collected the s and $c_P$ terms together.
 
@@ -93,7 +93,7 @@ The momentum equation takes this form:
 \end{equation}
 or
 \begin{equation}
-  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del (\exp{(\ln h)} + \phi) = \exp{(\ln h)}\frac{\del s}{c_P} + \exp{-\ln\rho}\mu \del\cdot(E),
+  \partial_t \vec{u} + \vec{u}\cdot \del\vec{u} + \del (\exp{(\ln h)} + \phi) = \exp{(\ln h)}\frac{\del s}{c_P} + \exp{(-\ln\rho)}\mu \del\cdot(E),
 \end{equation}
 for constant $\mu$.
 Clearly we're going to have to be a bit careful with our now nonlinear pressure gradient term (buoyancy has also changed from a quadratic nonlinearity to a band-unlimited nonlinearity).  To make progress, let's consider equilibria.
@@ -194,6 +194,15 @@ h_z = -\frac{1}{(m+1)}
 
 \section{A thermal equilibrum state}
 Let's now assert a base state, assuming hydrostatic equilibrium and a thermal equilibrium.
+
+Thermal equilibrium for this system is:
+\begin{equation}
+\left(\partial_t \frac{s_0}{c_P}\right) = \kappa\exp{(-\ln \rho_0)}\left[\nabla^2 \ln h_0 + \left(\nabla \ln h_0\right)^2\right] = 0
+\end{equation}
+or
+\begin{equation}
+\nabla^2 \ln h_0 + \left(\nabla \ln h_0\right)^2 = 0
+\end{equation}
 
 Recognizing that:
 \begin{equation}
