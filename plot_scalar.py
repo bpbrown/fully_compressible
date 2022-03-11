@@ -70,10 +70,10 @@ fig_E.savefig('{:s}/log_energies.pdf'.format(str(output_path)))
 
 fig_tau, ax_tau = plt.subplots(nrows=2)
 for i in [0,1]:
-    ax_tau[i].plot(t, data['τu1'], label=r'$\tau_{u1}$')
-    ax_tau[i].plot(t, data['τu2'], label=r'$\tau_{u2}$')
-    ax_tau[i].plot(t, data['τs1'], label=r'$\tau_{s1}$')
-    ax_tau[i].plot(t, data['τs2'], label=r'$\tau_{s2}$')
+    ax_tau[i].plot(t, data['τ_u1'], label=r'$\tau_{u1}$')
+    ax_tau[i].plot(t, data['τ_u2'], label=r'$\tau_{u2}$')
+    ax_tau[i].plot(t, data['τ_s1'], label=r'$\tau_{s1}$')
+    ax_tau[i].plot(t, data['τ_s2'], label=r'$\tau_{s2}$')
 
 for ax in ax_tau:
     if subrange:
