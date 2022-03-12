@@ -252,21 +252,21 @@ problem.add_equation((ρ0*(dt(u) + (h0*grad(θ) + grad_h0*θ)
                       - ε*h0*grad(s))
                       - scrR*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
-                      ρ0_g*(-dot(u,grad(u)))
-                      #-ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      #-ρ0_h0_g*np.expm1(θ)*grad(θ)
-                      #-ε*ρ0_h0_g*np.expm1(θ)*grad(s)
+                      -ρ0_g*dot(u,grad(u))
+                      -ρ0_grad_h0_g*(np.expm1(θ)-θ)
+                      -ρ0_h0_g*np.expm1(θ)*grad(θ)
+                      +ε*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
 problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)) + dot(lift(τ_u2,-1),ez),
                       -h0_g*dot(u, grad(Υ)) ))
 problem.add_equation((θ - (γ-1)*Υ - ε*γ*s, 0)) #EOS, s_c/cP = ε
 #TO-DO:
-# add ohmic heat
+#consider adding back in diffusive & source nonlinearities
 problem.add_equation((ρ0*(dt(s))
                       - scrR/Pr*(lap(θ)+2*dot(grad_θ0,grad(θ)))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       - ρ0_g*dot(u,grad(s))
-                      #+ R_inv/Pr*dot(grad(θ),grad(θ))
+                      + R_inv/Pr*dot(grad(θ),grad(θ))
                       #+ scrR*0.5*h0_inv_g*Phi
                       + source_g ))
 problem.add_equation((θ(z=0), 0))
@@ -286,7 +286,6 @@ noise.low_pass_filter(scales=0.25)
 s['g'] = noise['g']*np.sin(np.pi*z/Lz)
 Υ['g'] = -ε*γ/(γ-1)*s['g']
 θ['g'] = γ*s['g']*ε + (γ-1)*Υ['g']
-print(np.mean(np.abs(θ['g'])), np.max(np.abs(θ['g'])))
 
 if args['--SBDF2']:
     ts = de.SBDF2
