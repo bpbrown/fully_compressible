@@ -211,7 +211,6 @@ grad_h0_g = de.Grid(grad(h0)).evaluate()
 source = d.Field(name='source', bases=b)
 source.change_scales(dealias)
 source['g'] = (ε*scrR/Pr/h0).evaluate()['g']
-source['g'] = 0
 source_g = de.Grid(source).evaluate()
 
 Υ_bot = Υ0(z=0).evaluate()['g']
@@ -257,7 +256,7 @@ problem.add_equation((ρ0*(dt(u) + (h0*grad(θ) + grad_h0*θ)
                       -ρ0_h0_g*np.expm1(θ)*grad(θ)
                       +ε*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
-problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)) + dot(lift(τ_u2,-1),ez),
+problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)), # + dot(lift(τ_u2,-1),ez),
                       -h0_g*dot(u, grad(Υ)) ))
 problem.add_equation((θ - (γ-1)*Υ - ε*γ*s, 0)) #EOS, s_c/cP = ε
 #TO-DO:
@@ -267,7 +266,7 @@ problem.add_equation((ρ0*(dt(s))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       - ρ0_g*dot(u,grad(s))
                       + R_inv/Pr*dot(grad(θ),grad(θ))
-                      #+ scrR*0.5*h0_inv_g*Phi
+                      + scrR*0.5*h0_inv_g*Phi
                       + source_g ))
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((u(z=0), 0))
