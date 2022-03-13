@@ -15,6 +15,8 @@ Options:
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
+    --u_c                                Use u_c as the characteristic scale for tau
+
     --safety=<safety>                    CFL safety factor
     --SBDF2                              Use SBDF2
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
@@ -180,11 +182,16 @@ trace_e = trace(e)
 trace_e.store_last = True
 Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 
-Ma2 = 1 #ε
+if args['--u_c']:
+    Ma2 = ε
+else:
+    Ma2 = 1
+scrM = 1/Ma2
+scrS = 1 # s_c/c_P = 1
 Pr = 1
 
 R_inv = float(args['--mu'])
-
+scrR = R_inv
 
 h0 = d.Field(name='h0', bases=zb)
 h0['g'] = h_bot + z*h_slope #(Lz+1)-z
@@ -209,9 +216,8 @@ grad_h0_g = de.Grid(grad(h0)).evaluate()
 ρ0_h0_g = de.Grid(ρ0*h0).evaluate()
 
 source = d.Field(name='source', bases=b)
-Q = ε
 source.change_scales(dealias)
-source['g'] = (R_inv/Pr*ρ0/h0*Q).evaluate()['g']
+source['g'] = (ε*scrR/Pr/h0).evaluate()['g']
 source_g = de.Grid(source).evaluate()
 
 Υ_bot = Υ0(z=0).evaluate()['g']
@@ -224,37 +230,50 @@ if rank ==0:
     logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0][0]-θ_top[0][0],θ_bot[0][0],θ_top[0][0]))
     logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0][0]-Υ_top[0][0],Υ_bot[0][0],Υ_top[0][0]))
 
-scale = h0.copy()
+verbose = False
+if verbose:
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(nrows=2)
+
 logger.info("NCC expansions:")
-for ncc in [ρ0, ρ0*grad(h0), ρ0*h0, ρ0*grad(θ0), h0*grad(Υ0)]:
+for ncc in [h0, ρ0, ρ0*grad(h0), ρ0*h0, ρ0*grad(θ0), h0*grad(Υ0)]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
-    logger.info("scaled {}: {}".format((scale*ncc).evaluate(), np.where(np.abs((scale*ncc).evaluate()['c']) >= ncc_cutoff)[0].shape))
-
-
-scrC = Ma2*cP*Pr/(R_inv**2)
+    if verbose:
+        ncc = ncc.evaluate()
+        ncc.change_scales(1)
+        if ncc['g'].ndim == 3:
+            i = (1, 0, slice(None))
+        else:
+            i = (0, slice(None))
+        ax[0].plot(z[0,:], ncc['g'][i])
+        ax[1].plot(z[0,:], np.abs(ncc['g'][i]), label=ncc.name)
+if verbose:
+    ax[1].set_yscale('log')
+    ax[1].legend()
+    fig.savefig('structure.pdf')
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([u, Υ, θ, s, τ_u1, τ_u2, τ_s1, τ_s2])
-problem.add_equation((ρ0*(dt(u) + scrC*(h0*grad(θ) + grad_h0*θ)
-                      - scrC*h0*grad(s))
-                      - R_inv*viscous_terms
+problem.add_equation((ρ0*(dt(u) + scrM*(h0*grad(θ) + grad_h0*θ)
+                      - scrM*scrS*h0*grad(s))
+                      - scrR*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
-                      ρ0_g*(-dot(u,grad(u)))
-                      -scrC*ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      -scrC*ρ0_h0_g*np.expm1(θ)*grad(θ)
-                      -scrC*ρ0_h0_g*np.expm1(θ)*grad(s)
+                      -ρ0_g*dot(u,grad(u))
+                      -scrM*ρ0_grad_h0_g*(np.expm1(θ)-θ)
+                      -scrM*ρ0_h0_g*np.expm1(θ)*grad(θ)
+                      +scrM*scrS*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
-problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)) + dot(lift(τ_u2,-1),ez),
+problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)), # + dot(lift(τ_u2,-1),ez),
                       -h0_g*dot(u, grad(Υ)) ))
-problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, s_c/cP = 1
+problem.add_equation((θ - (γ-1)*Υ - scrS*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
-# add ohmic heat
+#consider adding back in diffusive & source nonlinearities
 problem.add_equation((ρ0*(dt(s))
-                      - R_inv/Pr*(lap(θ)+2*dot(grad_θ0,grad(θ)))
+                      - scrR/Pr*(lap(θ)+2*dot(grad_θ0,grad(θ)))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       - ρ0_g*dot(u,grad(s))
                       + R_inv/Pr*dot(grad(θ),grad(θ))
-                      + R_inv/scrC*0.5*h0_inv_g*Phi
+                      + scrR*0.5*h0_inv_g*Phi
                       + source_g ))
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((u(z=0), 0))
@@ -263,7 +282,7 @@ problem.add_equation((u(z=Lz), 0))
 logger.info("Problem built")
 
 # initial conditions
-amp = 1e-4*Ma2
+amp = 1e-4
 
 zb, zt = zb.bounds
 noise = d.Field(name='noise', bases=b)
@@ -271,12 +290,13 @@ noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
 s['g'] = noise['g']*np.sin(np.pi*z/Lz)
-Υ['g'] = -γ/(γ-1)*s['g']
-θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
+# pressure balanced ICs
+Υ['g'] = -scrS*γ/(γ-1)*s['g']
+θ['g'] = scrS*γ*s['g'] + (γ-1)*Υ['g'] # this should evaluate to zero
 
 if args['--SBDF2']:
     ts = de.SBDF2
-    cfl_safety_factor = 0.3
+    cfl_safety_factor = 0.2
 else:
     ts = de.RK443
     cfl_safety_factor = 0.4
@@ -305,7 +325,14 @@ IE.store_last = True
 Re.store_last = True
 ω.store_last = True
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=0.125,max_writes=20)
+if args['--u_c']:
+    slice_dt = 0.1
+    trace_dt = 0.1
+else:
+    slice_dt = 10/np.sqrt(ε)
+    trace_dt = 10/np.sqrt(ε)
+
+slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
@@ -315,8 +342,9 @@ slice_output.add_task(x_avg(-R_inv/Pr*dot(grad(h),ez)/cP), name='F_κ')
 slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE')
 slice_output.add_task(x_avg(dot(u,ez)*h), name='F_h')
 
+
 Ma_ad2 = dot(u,u)*cP/(γ*h)
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=np.inf)
+traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=np.inf)
 traces.add_task(avg(0.5*ρ*dot(u,u)), name='KE')
 traces.add_task(avg(IE), name='IE')
 traces.add_task(avg(Re), name='Re')
@@ -327,7 +355,7 @@ traces.add_task(x_avg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
 traces.add_task(x_avg(np.sqrt(τ_s1**2)), name='τ_s1')
 traces.add_task(x_avg(np.sqrt(τ_s2**2)), name='τ_s2')
 
-report_cadence = 1
+report_cadence = 10
 good_solution = True
 
 flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
