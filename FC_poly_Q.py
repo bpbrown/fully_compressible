@@ -6,8 +6,7 @@ Usage:
     FC_poly.py [options]
 
 Options:
-    --Rayleigh=<Rayleigh>                Rayleigh number (not used) [default: 1e4]
-    --mu=<mu>                            Viscosity [default: 0.0015]
+    --R=<R>                              Reynolds number [default: 1e2]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_h=<n_h>                          Enthalpy scale heights [default: 0.5]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0.5]
@@ -73,7 +72,6 @@ if run_time_iter != None:
 else:
     run_time_iter = np.inf
 
-Ra = Rayleigh = float(args['--Rayleigh']),
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
 
@@ -89,7 +87,7 @@ else:
 cP = γ/(γ-1)
 
 data_dir = sys.argv[0].split('.py')[0]
-data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
+data_dir += "_nh{}_R{}_Pr{}".format(args['--n_h'], args['--R'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
 data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
 if args['--label']:
@@ -168,8 +166,8 @@ from dedalus.core.operators import Skew
 skew = lambda A: Skew(A)
 
 
-ex = d.VectorField(c, name='ex', bases=zb)
-ez = d.VectorField(c, name='ez', bases=zb)
+ex = d.VectorField(c, name='ex')
+ez = d.VectorField(c, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
@@ -187,11 +185,9 @@ if args['--u_c']:
 else:
     Ma2 = 1
 scrM = 1/Ma2
-scrS = 1 # s_c/c_P = 1
+s_c_over_c_P = scrS = 1 # s_c/c_P = 1
 Pr = 1
-
-R_inv = float(args['--mu'])
-scrR = R_inv
+R_inv = scrR = 1/float(args['--R'])
 
 h0 = d.Field(name='h0', bases=zb)
 h0['g'] = h_bot + z*h_slope #(Lz+1)-z
@@ -217,7 +213,7 @@ grad_h0_g = de.Grid(grad(h0)).evaluate()
 
 source = d.Field(name='source', bases=b)
 source.change_scales(dealias)
-source['g'] = (ε*scrR/Pr/h0).evaluate()['g']
+source['g'] = (ε*R_inv/Pr/h0).evaluate()['g']
 source_g = de.Grid(source).evaluate()
 
 Υ_bot = Υ0(z=0).evaluate()['g']
@@ -254,31 +250,33 @@ if verbose:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([u, Υ, θ, s, τ_u1, τ_u2, τ_s1, τ_s2])
-problem.add_equation((ρ0*(dt(u) + scrM*(h0*grad(θ) + grad_h0*θ)
-                      - scrM*scrS*h0*grad(s))
-                      - scrR*viscous_terms
+problem.add_equation((ρ0*(dt(u) + 1/Ma2*(h0*grad(θ) + grad_h0*θ)
+                      - 1/Ma2*s_c_over_c_P*h0*grad(s))
+                      - R_inv*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       -ρ0_g*dot(u,grad(u))
-                      -scrM*ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      -scrM*ρ0_h0_g*np.expm1(θ)*grad(θ)
-                      +scrM*scrS*ρ0_h0_g*np.expm1(θ)*grad(s)
+                      -1/Ma2*ρ0_grad_h0_g*(np.expm1(θ)-θ)
+                      -1/Ma2*ρ0_h0_g*np.expm1(θ)*grad(θ)
+                      +1/Ma2*scrS*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
 problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)), # + dot(lift(τ_u2,-1),ez),
                       -h0_g*dot(u, grad(Υ)) ))
-problem.add_equation((θ - (γ-1)*Υ - scrS*γ*s, 0)) #EOS, s_c/cP = scrS
+problem.add_equation((θ - (γ-1)*Υ - s_c_over_c_P*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
 #consider adding back in diffusive & source nonlinearities
-problem.add_equation((ρ0*(dt(s))
-                      - scrR/Pr*(lap(θ)+2*dot(grad_θ0,grad(θ)))
+problem.add_equation((ρ0*s_c_over_c_P*dt(s)
+                      - R_inv/Pr*(lap(θ)+2*dot(grad_θ0,grad(θ)))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
-                      - ρ0_g*dot(u,grad(s))
+                      - ρ0_g*s_c_over_c_P*dot(u,grad(s))
                       + R_inv/Pr*dot(grad(θ),grad(θ))
-                      + scrR*0.5*h0_inv_g*Phi
+                      + R_inv*Ma2*0.5*h0_inv_g*Phi
                       + source_g ))
-problem.add_equation((θ(z=0), 0))
-problem.add_equation((u(z=0), 0))
+problem.add_equation((dot(ez,grad(θ))(z=0), 0))
+problem.add_equation((dot(ez,u)(z=0), 0))
+problem.add_equation((dot(ez, dot(ex,e))(z=0), 0))
 problem.add_equation((θ(z=Lz), 0))
-problem.add_equation((u(z=Lz), 0))
+problem.add_equation((dot(ez,u)(z=Lz), 0))
+problem.add_equation((dot(ez, dot(ex,e))(z=Lz), 0))
 logger.info("Problem built")
 
 # initial conditions
@@ -343,7 +341,7 @@ slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE')
 slice_output.add_task(x_avg(dot(u,ez)*h), name='F_h')
 
 
-Ma_ad2 = dot(u,u)*cP/(γ*h)
+Ma_ad2 = Ma2*dot(u,u)*cP/(γ*h)
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=np.inf)
 traces.add_task(avg(0.5*ρ*dot(u,u)), name='KE')
 traces.add_task(avg(IE), name='IE')
