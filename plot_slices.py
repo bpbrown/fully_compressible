@@ -6,7 +6,7 @@ Usage:
 
 Options:
     --output=<dir>     Output directory; defaults to 'frames' subdir within the case dir
-    --tasks=<tasks>    Tasks to plot [default: s]
+    --tasks=<tasks>    Tasks to plot [default: s,vorticity]
 """
 
 import h5py
@@ -49,7 +49,14 @@ def main(filename, start, count, tasks, output):
                 ax.set_aspect(1)
                 pcm = ax.pcolormesh(x, z, task[k,:].T, shading='nearest',cmap=cmap)
                 pmin,pmax = pcm.get_clim()
-                if center_zero:
+                if title == 'vorticity':
+                    cmap = 'PiYG'
+                    center_zero = True
+                else:
+                    cmap = None
+                    center_zero = False
+
+                if center_zero and not np.allclose([pmin, pmax], [0,0]):
                     cNorm = matplotlib.colors.TwoSlopeNorm(vmin=pmin, vcenter=0, vmax=pmax)
                     logger.info("centering zero: {} -- 0 -- {}".format(pmin, pmax))
                 else:
