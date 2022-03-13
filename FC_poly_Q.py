@@ -14,8 +14,6 @@ Options:
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
-    --u_c                                Use u_c as the characteristic scale for tau
-
     --safety=<safety>                    CFL safety factor
     --SBDF2                              Use SBDF2
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
@@ -180,10 +178,8 @@ trace_e = trace(e)
 trace_e.store_last = True
 Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 
-if args['--u_c']:
-    Ma2 = ε
-else:
-    Ma2 = 1
+Ma2 = ε
+
 scrM = 1/Ma2
 s_c_over_c_P = scrS = 1 # s_c/c_P = 1
 Pr = 1
@@ -323,12 +319,8 @@ IE.store_last = True
 Re.store_last = True
 ω.store_last = True
 
-if args['--u_c']:
-    slice_dt = 0.1
-    trace_dt = 0.1
-else:
-    slice_dt = 10/np.sqrt(ε)
-    trace_dt = 10/np.sqrt(ε)
+slice_dt = 0.1
+trace_dt = 0.1
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')

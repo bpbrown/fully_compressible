@@ -1,1 +1,4 @@
-png2mp4 $1'/frames/s_000*.png' $1/s.mp4 15
+for TASK in s vorticity
+do
+     png2mp4 $1/frames/$TASK $1/$TASK.mp4 15
+done
