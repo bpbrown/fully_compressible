@@ -1,0 +1,7 @@
+To do:
+[ ] check outputs, get flux and energy outputs correct
+[ ] double check all math in equations.tex; fix known errors
+[ ] test scaling of 2-D FC_poly_Q.py script
+[ ] determine: do different matrix solvers speed the problem?
+[ ] determine critical R
+[ ] confirm that Ma_ad^2 ~ epsilon, Re ~ R

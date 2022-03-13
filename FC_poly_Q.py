@@ -70,9 +70,10 @@ if run_time_iter != None:
 else:
     run_time_iter = np.inf
 
+R = float(args['--R'])
+R_inv = scrR = 1/R
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
-
 m_ad = 1/(γ-1)
 if args['--m']:
     m = float(args['--m'])
@@ -83,6 +84,12 @@ else:
 ε = m_ad - m
 
 cP = γ/(γ-1)
+
+Ma2 = ε
+scrM = 1/Ma2
+s_c_over_c_P = scrS = 1 # s_c/c_P = 1
+
+logger.info("Ma2 = {:.3g}, R = {:.3g}, R_inv = {:.3g}, Pr = {:.3g}, γ = {:.3g}".format(Ma2, R, R_inv, Pr, γ))
 
 data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_R{}_Pr{}".format(args['--n_h'], args['--R'], args['--Prandtl'])
@@ -178,12 +185,6 @@ trace_e = trace(e)
 trace_e.store_last = True
 Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
 
-Ma2 = ε
-
-scrM = 1/Ma2
-s_c_over_c_P = scrS = 1 # s_c/c_P = 1
-Pr = 1
-R_inv = scrR = 1/float(args['--R'])
 
 h0 = d.Field(name='h0', bases=zb)
 h0['g'] = h_bot + z*h_slope #(Lz+1)-z
@@ -265,7 +266,7 @@ problem.add_equation((ρ0*s_c_over_c_P*dt(s)
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       - ρ0_g*s_c_over_c_P*dot(u,grad(s))
                       + R_inv/Pr*dot(grad(θ),grad(θ))
-                      + R_inv*Ma2*0.5*h0_inv_g*Phi
+                      + R_inv*Ma2*h0_inv_g*Phi  # + R_inv*Ma2*0.5*h0_inv_g*Phi
                       + source_g ))
 problem.add_equation((dot(ez,grad(θ))(z=0), 0))
 problem.add_equation((dot(ez,u)(z=0), 0))
@@ -283,7 +284,7 @@ noise = d.Field(name='noise', bases=b)
 noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
-s['g'] = noise['g']*np.sin(np.pi*z/Lz)
+s['g'] = noise['g']*np.cos(np.pi/2*z/Lz)
 # pressure balanced ICs
 Υ['g'] = -scrS*γ/(γ-1)*s['g']
 θ['g'] = scrS*γ*s['g'] + (γ-1)*Υ['g'] # this should evaluate to zero
