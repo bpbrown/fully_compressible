@@ -1,4 +1,4 @@
-\documentclass{aastex62}
+\documentclass{aastex631}
 
 \usepackage{amsthm, amsmath, amssymb}
 \usepackage{latexsym,graphicx,rotating,amsmath, epsfig, natbib, graphbox}
@@ -11,13 +11,17 @@
 \renewcommand{\vec}{\boldsymbol}
 \newcommand{\pomega}{\varpi}
 \newcommand{\conv}{\boldsymbol}
+\newcommand{\grad}{\vec{\del}}
+\renewcommand{\d}{\mathrm{d}}
 
 \newcommand{\scrD}{\mathcal{D}}
 \newcommand{\scrH}{\mathcal{H}}
 \newcommand{\scrR}{\mathcal{R}}
 \newcommand{\scrL}{\mathcal{L}}
 \newcommand{\scrS}{\mathcal{S}}
+\newcommand{\scrP}{\mathcal{P}}
 
+\newcommand{\Ma}{\mathrm{Ma}}
 \newcommand{\Ra}{\mathrm{Ra}}
 \newcommand{\Ek}{\mathrm{Ek}}
 \renewcommand{\Pr}{\mathrm{Pr}}
@@ -39,6 +43,404 @@
 % \watermark{text}
 \begin{document}
 \section{Basic equations}
+The fully compressible Navier-Stokes momentum equation, in standard form is:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot\grad\vec{u} = -\frac{\grad P}{\rho} - \grad \phi - \frac{1}{\rho}\grad \cdot (\mu E_ij).
+\end{equation}
+We can transform from pressure to enthalpy and entropy via thermodynamic relations:
+\begin{equation}
+  \d h = T \d s + (\d P)/\rho,
+\end{equation}
+where, without loss of generality, we'll take $\d \rightarrow \grad$.  For an ideal gas we also have:
+\begin{equation}
+  h = c_P T,
+\end{equation}
+which leads to the following momentum equation:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot\grad\vec{u} = -\grad (h + \phi) + h \frac{\grad s}{c_P} + \frac{1}{\rho}\grad \cdot (\mu E_{ij}).
+\end{equation}
+
+This is paired with a continuity equation:
+\begin{equation}
+  \partial_t \ln \rho + \vec{u} \cdot \grad \vec{u} + \grad \cdot \vec{u} = 0,
+\end{equation}
+an equation of state:
+\begin{equation}
+ \frac{\d s}{c_P} = \frac{1}{\gamma} \d \ln h - \frac{\gamma - 1}{\gamma}\d \ln \rho
+\end{equation}
+and and entropy equation (e.g., an energy equation).  The entropy equation comes from the second law of thermodynamics:
+\begin{equation}
+  \rho T \d s = \d q = \Phi - \grad \cdot \vec{F}
+\end{equation}
+with $\Phi$ the viscous heating term and $\vec{F}$ the fluxes of heat.  For diffusive fluxes:
+\begin{equation}
+  \vec{F} = -K \grad T
+\end{equation}
+and if we have things like internal heating, those can also be represented either as a heating rate or as an equivalent flux $\vec{F_0}$, but we'll wait on those until we have larger equilibrium system.  The final form of the entropy equation is:
+\begin{equation}
+  \partial_t s + \vec{u}\cdot\grad s = \frac{1}{\rho h}\left[c_P \Phi + \grad\cdot(K \grad h) - \grad\cdot\vec{F_0} \right]
+\end{equation}
+
+\newpage
+\subsection{Non-dimensional form}
+To obtain a set of non-dimensional equations, let $t = \tau t^*$, $s = s_c s^*$, $\vec{x} = L \vec{x^*}$, with $u_c = L/\tau$ and $\tau$ at this point un-determined.  We will also take $h = h_c h^*$ and $\rho = \rho_c \rho^*$, with starred quantities non-dimensional.
+
+The non-dimensional momentum equation is:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot\grad\vec{u} =
+  -\left[\frac{h_c \tau^2}{L^2}\right]\grad \left(h + \left[\frac{\phi_c}{h_c}\right]\phi\right)
+  + \left[\frac{h_c \tau^2}{L^2}\right] \left[\frac{s_c}{c_P}\right]h\grad s + \left[\frac{(\mu/\rho_c) \tau}{L^2}\right]\frac{1}{\rho} \Bigg(\grad \cdot (E_{ij}) + \grad \ln \mu \cdot E_{ij}\Bigg).
+\end{equation}
+with entropy equation:
+\begin{equation}
+  \left[\frac{s_c}{c_P}\right]\Bigg(\partial_t s + \vec{u}\cdot\grad s\Bigg) =
+  \left[\frac{(\mu/\rho_c)\tau}{L^2}\right]\left[\frac{L^2 \tau^2}{h_c}\right]\frac{1}{\rho h} \Phi
+  + \left[\frac{K/(\rho_c c_P)\tau}{L^2}\right] \frac{1}{\rho h}\Bigg(\grad\cdot(\grad h) + \grad K \cdot \grad h \Bigg)
+  - \left[\frac{F_c \tau}{L \rho_c h_c}\right]\frac{1}{\rho h}\grad\cdot\vec{F_0}.
+\end{equation}
+The equation of state is:
+\begin{equation}
+  \left[\frac{s_c}{c_P}\right] \gamma s = \ln h - (\gamma - 1)\ln \rho
+\end{equation}
+
+\subsection{Hydrostatic balance}
+Let quantities with subscript zero denote the hydrostatically-balanced state.  The momentum equation gives:
+\begin{equation}
+  \grad h_0 =
+  - \left[\frac{\phi_c}{h_c}\right]\grad\phi
+  + \left[\frac{s_c}{c_P}\right]h_0\grad s_0.
+\end{equation}
+If we let $h_1 = h - h_0$ and $s_1 = s - s_0$, we obtain the fluctuating momentum equation:
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot\grad\vec{u} =
+  -\left[\frac{h_c \tau^2}{L^2}\right]\grad h_1
+  + \left[\frac{h_c \tau^2}{L^2}\right] \left[\frac{s_c}{c_P}\right]\left(h_1\grad s_0 + h_0\grad s_1 + h_1 \grad s_1\right) + \left[\frac{(\mu/\rho_c) \tau}{L^2}\right]\frac{1}{\rho} \Bigg(\grad \cdot (E_{ij}) + \grad \ln \mu \cdot E_{ij}\Bigg).
+\end{equation}
+
+\subsection{Internal heating}
+Let's consider a system that has a linearly decreasing background flux $F_0$:
+\begin{equation}
+  \vec{F_0} = F_c \left(1 - \epsilon z\right) \vec{\hat{z}}
+\end{equation}
+This decreasing flux deposits heat throughout the system.  We might assume that the characteristic flux $F_c$ is the flux carried by thermal diffusion on the adiabatic, in which case it scales as:
+\begin{equation}
+  F_c = -(K/c_p) \grad h_{ad}
+\end{equation}
+For a polytrope, with $\grad h_{ad} = \text{constant}$, the adiabatic flux is constant and disappears under the divergence, but the fall off remains.  Dimensionally,
+\begin{equation}
+  F_c = \frac{(K/c_p) h_c}{L}
+\end{equation}
+and
+\begin{equation}
+\left[\frac{s_c}{c_P}\right] \partial_t s \propto
+\left[\frac{(K/(\rho_c c_p)) \tau}{L^2}\right]\frac{1}{\rho h} \epsilon.
+\end{equation}
+For simplicity, we've assumed $K$ is constant.
+Under this assumption, our full entropy equation is then:
+\begin{equation}
+  \left[\frac{s_c}{c_P}\right]\Bigg(\partial_t s + \vec{u}\cdot\grad s\Bigg) =
+  \left[\frac{(\mu/\rho_c)\tau}{L^2}\right]\left[\frac{L^2 \tau^2}{h_c}\right]\frac{1}{\rho h} \Phi
+  + \left[\frac{K/(\rho_c c_P)\tau}{L^2}\right] \frac{1}{\rho h}\grad\cdot(\grad h)
+  + \left[\frac{(K/(\rho_c c_p)) \tau}{L^2}\right]\frac{1}{\rho h} \epsilon.
+\end{equation}
+
+Using the results of Appendix~\ref{sec:log enthalpy diffusion}, we can re-write the entropy equation as:
+
+\begin{equation}
+  \left[\frac{s_c}{c_P}\right]\Bigg(\partial_t s + \vec{u}\cdot\grad s\Bigg) =
+  \left[\frac{(\mu/\rho_c)\tau}{L^2}\right]\left[\frac{L^2 \tau^2}{h_c}\right]\frac{1}{\rho h} \Phi
+  + \left[\frac{K/(\rho_c c_P)\tau}{L^2}\right] \frac{1}{\rho h}\left(\nabla^2 \theta + 2 \grad \ln h_0 \cdot \grad \theta + (\grad \theta)^2\right)
+  + \left[\frac{(K/(\rho_c c_p)) \tau}{L^2}\right]\frac{1}{\rho h} \epsilon.
+\end{equation}
+
+
+
+\section{Choices}
+Now it's time to finally make some choices.
+
+\subsection{Velocity-based equations: $\tau = L/u_c$}
+Let's make the exciting choice first, and try and set our timescale by our characteristic (unknown) velocity scale.
+
+Our major non-dimensional sets are:
+\begin{align}
+\Ma^{2} & \equiv \left[\frac{L^2}{h_c \tau^2}\right] = \left[\frac{u_c^2}{h_c}\right] \\
+\scrR & \equiv \left[\frac{L^2}{(\mu/\rho_c) \tau}\right] = \left[\frac{u_c L}{(\mu/\rho_c)}\right] \\
+\scrP & \equiv \left[\frac{L^2}{K/(\rho_c c_P)\tau}\right] = \left[\frac{u_c L}{K/(\rho_c c_P)}\right] \\
+\text{and} \nonumber \\
+\scrP &\equiv \scrR \Pr \\
+\end{align}
+We have no particular guidance on the characteristic entropy scale $s_c$, so here we take
+\begin{equation}
+  \frac{s_c}{c_P} \equiv 1.
+\end{equation}
+
+Our non-dimensional equations under this set are:
+\begin{equation}
+  \partial_t \Upsilon_1 + \vec{u}\cdot\grad \Upsilon_0 + \vec{u}\cdot\grad \Upsilon_1 + \grad \cdot \vec{u} = 0
+\end{equation}
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot\grad\vec{u} =
+  -\frac{1}{\Ma^2}\grad h_1
+  + \frac{1}{\Ma^2} \left(h_1\grad s_0 + h_0\grad s_1 + h_1 \grad s_1\right) + \frac{1}{\scrR}\frac{1}{\rho} \grad \cdot (E_{ij})
+\end{equation}
+\begin{equation}
+  \partial_t s + \vec{u}\cdot\grad s =
+  \frac{1}{\scrR} \Ma^2  \frac{1}{\rho h} \Phi
+  + \frac{1}{\scrR \Pr} \frac{1}{\rho}\left(\nabla^2 \theta + 2 \grad \ln h_0 \cdot \grad \theta + (\grad \theta)^2\right)
+  + \frac{1}{\scrR \Pr} \frac{1}{\rho h} \epsilon.
+\end{equation}
+with equation of state:
+\begin{equation}
+  \gamma s_1 = \theta_1 - (\gamma - 1)\Upsilon_1
+\end{equation}
+
+\subsection{A hydrostatic and adiabatic background state}
+If we assume that the hydrostatic state is an adiabatic polytrope, with $\grad s_0=0$, we can start achieving final form for our equations.
+The momentum equation can be written in terms of $\theta$ and $\Upsilon$ by taking
+\begin{align}
+\rho &= \rho_0 \exp(\Upsilon) \\
+h & = h_0 \exp(\theta) \\
+h_1 &= h - h_0 = h_0(\exp(\theta)-1)
+\end{align}
+
+\begin{equation}
+  \partial_t \vec{u} + \vec{u}\cdot\grad\vec{u} =
+  -\frac{1}{\Ma^2} \grad \left(h_0 \left(\exp(\theta_1)-1\right)\right)
+  + \frac{1}{\Ma^2} \left(h_0\grad s_1 + h_0 \left(\exp(\theta_1)-1\right)\grad s_1\right) + \frac{1}{\scrR}\frac{1}{\rho} \grad \cdot (E_{ij})
+\end{equation}
+Before proceeding to Dedalus-form, we note
+\begin{equation}
+\grad \left(h_0 \left(\exp(\theta_1)-1\right)\right) = \grad \left(h_0 \left(\exp(\theta_1)-1-\theta\right)\right) + \grad \left(h_0 \theta\right)
+\end{equation}
+
+\newpage
+\section{Dedalus form}
+Defining
+\begin{equation}
+  \expm(A) \equiv \exp(A) - 1
+\end{equation}
+we have continuity:
+\begin{equation}
+  \partial_t \Upsilon_1 + \vec{u}\cdot\grad \Upsilon_0 + \grad \cdot \vec{u} = - \vec{u}\cdot\grad \Upsilon_1
+\end{equation}
+momentum:
+\begin{equation}
+  \partial_t \vec{u}
+  + \frac{1}{\Ma^2}\Bigg((\grad h_0)\theta  + h_0 \grad \theta \Bigg)
+  - \frac{1}{\Ma^2} h_0 \grad s_1
+  - \frac{1}{\scrR}\frac{1}{\rho} \grad \cdot (E_{ij})
+  =
+  -\vec{u}\cdot\grad\vec{u}
+  -\frac{1}{\Ma^2} \left(\expm(\theta)-\theta\right)
+  + \frac{1}{\Ma^2} \left(h_0 \expm(\theta) \grad s_1\right)
+\end{equation}
+entropy:
+\begin{equation}
+  \partial_t s
+  - \frac{1}{\scrR \Pr} \frac{1}{\rho}\left(\nabla^2 \theta + 2 \grad \ln h_0 \cdot \grad \theta \right)
+  =
+  - \vec{u}\cdot\grad s
+  + \frac{1}{\scrR} \Ma^2  \frac{1}{\rho h} \Phi
+  + \frac{1}{\scrR \Pr} \frac{1}{\rho} (\grad \theta)^2
+  + \frac{1}{\scrR \Pr} \frac{1}{\rho h} \epsilon.
+\end{equation}
+with equation of state:
+\begin{equation}
+  \gamma s_1 = \theta_1 - (\gamma - 1)\Upsilon_1
+\end{equation}
+
+\subsection{scale factors}
+To reduce ncc bandwidth, let's scale these:
+\begin{equation}
+    h_0 \left(\partial_t \Upsilon_1 + \vec{u}\cdot\grad \Upsilon_0 + \grad \cdot \vec{u}\right) = - h_0 \vec{u}\cdot\grad \Upsilon_1
+\end{equation}
+momentum:
+\begin{multline}
+  \rho_0 \partial_t \vec{u}
+  + \frac{1}{\Ma^2}\rho_0 h_0 \Bigg((\grad \theta_0)\theta  + \grad \theta \Bigg)
+  - \frac{1}{\Ma^2} \rho_0 h_0 \grad s_1
+  - \frac{1}{\scrR}\left[\frac{\rho_0}{\rho}\right] \grad \cdot (E_{ij})
+  = \\
+  -\rho_0 \vec{u}\cdot\grad\vec{u}
+  -\frac{1}{\Ma^2} \rho_0 \left(\expm(\theta)-\theta\right)
+  + \frac{1}{\Ma^2} \rho_0 h_0 \expm(\theta) \grad s_1
+\end{multline}
+entropy:
+\begin{equation}
+  \rho_0 \partial_t s
+  - \frac{1}{\scrR \Pr} \left[\frac{\rho_0}{\rho}\right]\left(\nabla^2 \theta + 2 \grad \ln h_0 \cdot \grad \theta \right)
+  =
+  - \rho_0 \vec{u}\cdot\grad s
+  \frac{1}{\scrR} \Ma^2  \frac{\rho_0}{\rho h} \Phi
+  + \frac{1}{\scrR \Pr} \left[\frac{\rho_0}{\rho}\right] (\grad \theta)^2
+  + \frac{1}{\scrR \Pr} \frac{\rho_0}{\rho h} \epsilon.
+\end{equation}
+with equation of state:
+\begin{equation}
+  \gamma s_1 = \theta_1 - (\gamma - 1)\Upsilon_1
+\end{equation}
+If in the diffusive terms we take the square bracket $[\rho_0/\rho] = 1$ (namely, the diffusion constant only feels the background state), then this system is straightforward to timestep.  If we take a fully nonlinear density in the diffusion term $[\rho_0/\rho] = \exp(-\Upsilon)$, then we need to be much more careful in how we treat diffusivity.  We'll need to handle part of the term implicitly and part explicitly, and to do this we'll need to have the explicit part be "anti-diffusive", which means we'll need to "over-subtract" the implicit stabilized portion from the full nonlinear form.  But that's a fight for another day.
+
+\newpage
+\subsection{Just make it simple}
+If we take $1/\rho = 1/\rho_0$, and $1/h = 1/h_0$ for consistency, here's the cleaned up set of equations, with continuity:
+\begin{equation}
+    h_0 \left(\partial_t \Upsilon_1 + \vec{u}\cdot\grad \Upsilon_0 + \grad \cdot \vec{u}\right) = - h_0 \vec{u}\cdot\grad \Upsilon_1
+\end{equation}
+momentum:
+\begin{multline}
+  \rho_0 \partial_t \vec{u}
+  + \frac{1}{\Ma^2}\rho_0 h_0 \Bigg((\grad \theta_0)\theta  + \grad \theta \Bigg)
+  - \frac{1}{\Ma^2} \rho_0 h_0 \grad s_1
+  - \frac{1}{\scrR}\grad \cdot (E_{ij})
+  = \\
+  -\rho_0 \vec{u}\cdot\grad\vec{u}
+  -\frac{1}{\Ma^2} \rho_0 \left(\expm(\theta)-\theta\right)
+  + \frac{1}{\Ma^2} \rho_0 h_0 \expm(\theta) \grad s_1
+\end{multline}
+entropy:
+\begin{equation}
+  \rho_0 \partial_t s
+  - \frac{1}{\scrR \Pr}\left(\nabla^2 \theta + 2 \grad \ln h_0 \cdot \grad \theta \right)
+  =
+  - \rho_0 \vec{u}\cdot\grad s
+  \frac{1}{\scrR} \Ma^2  \frac{1}{h_0} \Phi
+  + \frac{1}{\scrR \Pr} (\grad \theta)^2
+  + \frac{1}{\scrR \Pr} \frac{1}{h_0} \epsilon.
+\end{equation}
+with equation of state:
+\begin{equation}
+  \gamma s_1 = \theta_1 - (\gamma - 1)\Upsilon_1
+\end{equation}
+
+
+\newpage
+\appendix
+\section{Diffusion in log-enthalpy form, with $\theta = \ln h$}
+\label{sec:log enthalpy diffusion}
+The diffusive term can be re-written:
+\begin{equation}
+  \frac{1}{h}\grad\cdot(\grad h) = \nabla^2 \ln h + (\grad \ln h)^2
+\end{equation}
+or, taking the $h = h_0 + h_1$ decomposition:
+\begin{equation}
+  \nabla^2 \ln h + (\grad \ln h)^2 = \nabla^2 \ln h_0 + (\grad \ln h_0)^2 + 2\grad \ln h_0 \cdot \grad \ln h_1 + \nabla^2 \ln h_1 + (\grad \ln h_1)^2
+\end{equation}
+Does this hold up for a general nonlinear $1/h$?  Let's test by deriving this via a different pathway.
+
+Inspired by our treatment of log-densities, take a log-enthalpy form, with
+\begin{equation}
+  \theta \equiv \ln h = \theta_0 + \theta_1
+\end{equation}
+and
+\begin{equation}
+  h_0 = h_c \exp(\theta_0)
+\end{equation}
+or
+\begin{equation}
+  h_1 = h-h_0 = h_0 \left[\exp(\theta) - 1\right]
+\end{equation}
+
+
+Now:
+\begin{equation}
+  \grad h = \grad h_0 + \grad h_1 = \grad h_0 + h_0 \exp(\theta) \grad \theta + \left[\exp(\theta) - 1\right] \grad h_0
+\end{equation}
+and
+\begin{align}
+  \grad\cdot\grad h
+  &= \nabla^2 h_0 + \grad\cdot(h_0 \exp(\theta) \grad \theta + \left[\exp(\theta) - 1\right] \grad h_0) \nonumber \\
+  &= \nabla^2 h_0
+  + \exp(\theta) \grad h_0 \cdot \grad \theta
+  + h_0 \exp(\theta) \grad \theta \cdot \grad \theta
+  + h_0 \exp(\theta) \nabla^2 \theta
+  + \exp(\theta) \grad\theta \cdot \grad h_0
+  + \left[\exp(\theta)-1\right] \nabla^2 h_0
+  \nonumber \\
+  &=
+  2 h_0 \exp(\theta) \grad \ln h_0 \cdot \grad \theta
+  + h_0 \exp(\theta) \grad \theta \cdot \grad \theta
+  + h_0 \exp(\theta) \nabla^2 \theta
+  + h_0 \exp(\theta) \nabla^2 \ln h_0
+  + h_0 \exp(\theta) (\grad \ln h_0)^2
+\end{align}
+And our overall term is:
+\begin{align}
+  \frac{\grad\cdot\grad h}{h}
+  & = \frac{1}{h_0 \exp{\theta}} \grad\cdot\grad h \nonumber \\
+  & = 2 \grad \ln h_0 \cdot \grad \theta
+  + \grad \theta \cdot \grad \theta
+  + \nabla^2 \theta
+  + \nabla^2 \ln h_0
+  + (\grad \ln h_0)^2
+\end{align}
+Note that the last terms came from:
+\begin{equation}
+  h_0 \frac{\nabla^2 h_0}{h_0} =
+  h_0 \left(\nabla^2 \ln h_0 + (\grad \ln h_0)^2\right).
+\end{equation}
+In a polytrope,
+\begin{equation}
+  \nabla^2 h_0 = 0
+\end{equation}
+so we must also have
+\begin{equation}
+  \nabla^2 \ln h_0 + (\grad \ln h_0)^2 = 0
+\end{equation}
+and
+\begin{align}
+  \frac{\grad\cdot\grad h}{h}
+  & = \nabla^2 \theta + 2 \grad \ln h_0 \cdot \grad \theta
+  + (\grad \theta)^2,
+\end{align}
+which is the same result as we obtained previously.  So this is good for arbitrary decompositions (rather than us running into some nasty decomposition problem where this is only valid for $h_1 \ll h_0$ or similar nonsense).
+
+
+
+
+\end{document}
+
+
+\subsection{Hydrostatic balance and a polytrope}
+Let quantities with subscript zero denote the hydrostatically-balanced state.  The momentum equation gives:
+\begin{equation}
+  \left[\frac{h_c \tau^2}{L^2}\right]\grad h_0 =
+  - \left[\frac{h_c \tau^2}{L^2}\right]\left[\frac{\phi_c}{h_c}\right]\grad\phi
+  + \left[\frac{h_c \tau^2}{L^2}\right] \left[\frac{s_c}{c_P}\right]h_0\grad s_0
+\end{equation}
+or:
+\begin{equation}
+  \grad \left(\ln h_0 - \left[\frac{s_c}{c_P}\right]s_0\right) =
+  - \left[\frac{\phi_c}{h_c}\right]\frac{\grad\phi}{h_0}
+\end{equation}
+For a polytrope,
+\begin{equation}
+  \d \ln \rho = m \d \ln h,
+\end{equation}
+and with the equation of state:
+\begin{equation}
+  \left[\frac{s_c}{c_P}\right] s = \frac{1}{\gamma}(1 - (\gamma - 1) m) \ln h
+\end{equation}
+which leads to:
+\begin{equation}
+  \grad \left((1 - \frac{1}{\gamma}(1 - (\gamma - 1) m)) \ln h_0 \right) =
+  - \left[\frac{\phi_c}{h_c}\right]\frac{\grad\phi}{h_0}
+\end{equation}
+or
+\begin{equation}
+  \left[\frac{\gamma-1}{\gamma}(1 +  m)\right] \grad \ln h_0  =
+  - \left[\frac{\phi_c}{h_c}\right]\frac{\grad\phi}{h_0}
+\end{equation}
+and finally
+\begin{equation}
+  \grad h_0  =
+  - \left[\frac{\gamma}{\gamma-1}\right]\left[\frac{1}{m+1}\right] \left[\frac{\phi_c}{h_c}\right] \grad\phi.
+\end{equation}
+If $\phi_c \grad \phi = g L
+
+
+\end{document}
+
 From Geoff Vasil's "gauged" document, the fully compressible equations are:
 \begin{equation}
   \partial_t \ln \rho + \scrD_1 \cdot \vec{u} = 0
