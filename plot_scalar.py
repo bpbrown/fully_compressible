@@ -47,7 +47,7 @@ if args['--times']:
 else:
     subrange = False
 
-energy_keys = ['KE','IE']
+energy_keys = ['KE','IE','PE']
 
 fig_E, ax_E = plt.subplots(nrows=2)
 for key in energy_keys:
@@ -67,6 +67,20 @@ fig_E.savefig('{:s}/energies.pdf'.format(str(output_path)))
 for ax in ax_E:
     ax.set_yscale('log')
 fig_E.savefig('{:s}/log_energies.pdf'.format(str(output_path)))
+
+fig_E, ax_E = plt.subplots(nrows=2)
+for key in energy_keys:
+    ax_E[0].plot(t, data[key]-data[key][0], label=key+"'")
+ax_E[1].plot(t, data['KE'], label='KE')
+
+for ax in ax_E:
+    if subrange:
+        ax.set_xlim(t_min,t_max)
+    ax.set_xlabel('time')
+    ax.set_ylabel('energy density')
+    ax.legend(loc='lower left')
+fig_E.savefig('{:s}/energies_fluctuating.pdf'.format(str(output_path)))
+
 
 fig_tau, ax_tau = plt.subplots(nrows=2)
 for i in [0,1]:
