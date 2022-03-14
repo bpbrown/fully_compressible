@@ -314,6 +314,29 @@ with equation of state:
 \end{equation}
 
 
+\section{Energies and fluxes}
+What are the conserved energies and fluxes in this system?  The full energy equation is:
+\begin{align}
+  \partial_t \left(\case{1}{2} \rho u^2 + \frac{1}{\Ma^2} \rho h - \frac{1}{\Ma^2}\frac{s_c}{c_P} \rho h s \right)
+  + \grad \cdot \left(\case{1}{2} \rho u^2 \vec{u} - \frac{1}{\Ma^2}\rho h s \vec{u} - \frac{1}{\scrR \Pr} \grad h + \vec{F_0} + \frac{1}{\scrR} \vec{u}\cdot e_{ij} \right)
+\end{align}
+
+The adiabatic Mach number squared is given by:
+\begin{equation}
+  \Ma^2_{ad}
+  = \Ma^2\frac{c_P}{\gamma}\frac{u^2}{h}
+  = \frac{\Ma^2}{\gamma-1}\frac{u^2}{h}
+\end{equation}
+
+
+
+
+
+
+
+
+
+
 \newpage
 \appendix
 \section{Diffusion in log-enthalpy form, with $\theta = \ln h$}
@@ -394,8 +417,6 @@ and
   + (\grad \theta)^2,
 \end{align}
 which is the same result as we obtained previously.  So this is good for arbitrary decompositions (rather than us running into some nasty decomposition problem where this is only valid for $h_1 \ll h_0$ or similar nonsense).
-
-
 
 
 \end{document}
