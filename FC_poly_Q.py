@@ -256,7 +256,7 @@ problem.add_equation((ρ0*(dt(u) + 1/Ma2*(h0*grad(θ) + grad_h0*θ)
                       -1/Ma2*ρ0_h0_g*np.expm1(θ)*grad(θ)
                       +1/Ma2*scrS*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
-problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)), # + dot(lift(τ_u2,-1),ez),
+problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)) + dot(lift(τ_u2,-1),ez),
                       -h0_g*dot(u, grad(Υ)) ))
 problem.add_equation((θ - (γ-1)*Υ - s_c_over_c_P*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
