@@ -19,7 +19,7 @@ Options:
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
-    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
+    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=aspect*nz
 
     --run_time=<run_time>                Run time, in hours [default: 23.5]
     --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
@@ -268,12 +268,12 @@ problem.add_equation((ρ0*s_c_over_c_P*dt(s)
                       + R_inv/Pr*dot(grad(θ),grad(θ))
                       + R_inv*Ma2*h0_inv_g*Phi  # + R_inv*Ma2*0.5*h0_inv_g*Phi
                       + source_g ))
-problem.add_equation((dot(ez,grad(θ))(z=0), 0))
 problem.add_equation((dot(ez,u)(z=0), 0))
 problem.add_equation((dot(ez, dot(ex,e))(z=0), 0))
-problem.add_equation((θ(z=Lz), 0))
 problem.add_equation((dot(ez,u)(z=Lz), 0))
 problem.add_equation((dot(ez, dot(ex,e))(z=Lz), 0))
+problem.add_equation((dot(ez,grad(θ))(z=0), 0))
+problem.add_equation((θ(z=Lz), 0))
 logger.info("Problem built")
 
 # initial conditions
@@ -309,13 +309,15 @@ cfl.add_velocity(u)
 s0 = d.Field(name='s0')
 s0['g'] = 0
 
-ρ = np.exp(Υ0+Υ).evaluate()
+ρ = ρ0*np.exp(Υ).evaluate()
 h = h0*np.exp(θ).evaluate()
 KE = 0.5*ρ*dot(u,u)
-IE = cP*Ma2*h*(s+s0)
-Re = (ρ/R_inv)*np.sqrt(dot(u,u))
+IE = 1/Ma2*ρ*h
+PE = -1/Ma2*ρ*h*(s+s0)
+Re = (ρ*R)*np.sqrt(dot(u,u))
 ω = -div(skew(u))
 KE.store_last = True
+PE.store_last = True
 IE.store_last = True
 Re.store_last = True
 ω.store_last = True
@@ -329,14 +331,19 @@ slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
 slice_output.add_task(ω, name='vorticity')
 slice_output.add_task(ω**2, name='enstrophy')
-slice_output.add_task(x_avg(-R_inv/Pr*dot(grad(h),ez)/cP), name='F_κ')
-slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE')
-slice_output.add_task(x_avg(dot(u,ez)*h), name='F_h')
-
+# horizontal averages
+slice_output.add_task(x_avg(s), name='s(z)')
+slice_output.add_task(x_avg(-R_inv/Pr*dot(grad(h-h0),ez)), name='F_κ(z)')
+slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE(z)')
+slice_output.add_task(x_avg(dot(u,ez)*ρ*h), name='F_h(z)')
+slice_output.add_task(x_avg(-dot(u,ez)*ρ*h*s), name='F_PE(z)')
+#slice_output.add_task(x_avg(-h*source*z), name='F_source') # only valid for constant source
+slice_output.add_task(x_avg(-h*source), name='Q_source(z)')
 
 Ma_ad2 = Ma2*dot(u,u)*cP/(γ*h)
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=np.inf)
 traces.add_task(avg(0.5*ρ*dot(u,u)), name='KE')
+traces.add_task(avg(PE), name='PE')
 traces.add_task(avg(IE), name='IE')
 traces.add_task(avg(Re), name='Re')
 traces.add_task(avg(ω**2), name='enstrophy')
