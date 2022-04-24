@@ -19,7 +19,7 @@ Options:
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
-    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
+    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=aspect*nz
 
     --run_time=<run_time>                Run time, in hours [default: 23.5]
     --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
