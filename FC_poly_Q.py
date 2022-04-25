@@ -240,7 +240,7 @@ problem = de.IVP([u, Υ, θ, s, τ_u1, τ_u2, τ_s1, τ_s2])
 problem.add_equation((ρ0*(dt(u) + 1/Ma2*(h0*grad(θ) + grad_h0*θ)
                       - 1/Ma2*s_c_over_c_P*h0*grad(s))
                       - R_inv*viscous_terms
-                      + lift(τ_u1,-1) + lift(τ_u2,-2),
+                      + lift(τ_u1,-1) + R_inv*lift(τ_u2,-2),
                       -ρ0_g*u@grad(u)
                       -1/Ma2*ρ0_grad_h0_g*(np.expm1(θ)-θ)
                       -1/Ma2*ρ0_h0_g*np.expm1(θ)*grad(θ)
@@ -253,7 +253,7 @@ problem.add_equation((θ - (γ-1)*Υ - s_c_over_c_P*γ*s, 0)) #EOS, s_c/cP = scr
 #consider adding back in diffusive & source nonlinearities
 problem.add_equation((ρ0*s_c_over_c_P*dt(s)
                       - R_inv/Pr*(lap(θ)+2*grad_θ0@grad(θ))
-                      + lift(τ_s1,-1) + lift(τ_s2,-2),
+                      + lift(τ_s1,-1) + R_inv/Pr*lift(τ_s2,-2),
                       - ρ0_g*s_c_over_c_P*u@grad(s)
                       + R_inv/Pr*grad(θ)@grad(θ)
                       + R_inv*Ma2*h0_inv_g*Phi  # + R_inv*Ma2*0.5*h0_inv_g*Phi
