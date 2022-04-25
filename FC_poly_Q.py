@@ -30,25 +30,14 @@ Options:
     --label=<label>                      Additional label for run output directory
 """
 
-import numpy as np
 from mpi4py import MPI
-rank = MPI.COMM_WORLD.rank
-from dedalus.tools.parallel import Sync
+import numpy as np
+import sys
+import os
 
 from docopt import docopt
 args = docopt(__doc__)
 from fractions import Fraction
-
-import sys
-import os
-import pathlib
-import h5py
-
-import logging
-logger = logging.getLogger(__name__)
-
-dlog = logging.getLogger('evaluator')
-dlog.setLevel(logging.WARNING)
 
 ncc_cutoff = float(args['--ncc_cutoff'])
 
@@ -89,8 +78,6 @@ Ma2 = ε
 scrM = 1/Ma2
 s_c_over_c_P = scrS = 1 # s_c/c_P = 1
 
-logger.info("Ma2 = {:.3g}, R = {:.3g}, R_inv = {:.3g}, Pr = {:.3g}, γ = {:.3g}".format(Ma2, R, R_inv, Pr, γ))
-
 data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_R{}_Pr{}".format(args['--n_h'], args['--R'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
@@ -98,10 +85,16 @@ data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
 
+import logging
+logger = logging.getLogger(__name__)
+dlog = logging.getLogger('evaluator')
+dlog.setLevel(logging.WARNING)
+
 from dedalus.tools.config import config
 config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
 config['logging']['file_level'] = 'DEBUG'
 
+from dedalus.tools.parallel import Sync
 with Sync() as sync:
     if sync.comm.rank == 0:
         if not os.path.exists('{:s}/'.format(data_dir)):
@@ -112,6 +105,9 @@ with Sync() as sync:
 
 import dedalus.public as de
 from dedalus.extras import flow_tools
+rank = MPI.COMM_WORLD.rank
+
+logger.info("Ma2 = {:.3g}, R = {:.3g}, R_inv = {:.3g}, Pr = {:.3g}, γ = {:.3g}".format(Ma2, R, R_inv, Pr, γ))
 
 logger.info(args)
 logger.info("saving data in: {}".format(data_dir))
@@ -156,7 +152,6 @@ div = lambda A: de.Divergence(A, index=0)
 lap = lambda A: de.Laplacian(A, c)
 grad = lambda A: de.Gradient(A, c)
 #curl = lambda A: de.operators.Curl(A)
-dot = lambda A, B: de.DotProduct(A, B)
 cross = lambda A, B: de.CrossProduct(A, B)
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
@@ -164,17 +159,12 @@ dt = lambda A: de.TimeDerivative(A)
 
 integ = lambda A: de.Integrate(de.Integrate(A, 'x'), 'z')
 avg = lambda A: integ(A)/(Lx*Lz)
-#x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 
 from dedalus.core.operators import Skew
 skew = lambda A: Skew(A)
 
-
-ex = d.VectorField(c, name='ex')
-ez = d.VectorField(c, name='ez')
-ex['g'][0] = 1
-ez['g'][1] = 1
+ex, ez = c.unit_vector_fields(d)
 
 # stress-free bcs
 e = grad(u) + trans(grad(u))
@@ -183,7 +173,7 @@ e.store_last = True
 viscous_terms = div(e) - 2/3*grad(div(u))
 trace_e = trace(e)
 trace_e.store_last = True
-Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
+Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 
 
 h0 = d.Field(name='h0', bases=zb)
@@ -251,28 +241,28 @@ problem.add_equation((ρ0*(dt(u) + 1/Ma2*(h0*grad(θ) + grad_h0*θ)
                       - 1/Ma2*s_c_over_c_P*h0*grad(s))
                       - R_inv*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
-                      -ρ0_g*dot(u,grad(u))
+                      -ρ0_g*u@grad(u)
                       -1/Ma2*ρ0_grad_h0_g*(np.expm1(θ)-θ)
                       -1/Ma2*ρ0_h0_g*np.expm1(θ)*grad(θ)
                       +1/Ma2*scrS*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
-problem.add_equation((h0*(dt(Υ) + div(u) + dot(u, grad_Υ0)) + dot(lift(τ_u2,-1),ez),
-                      -h0_g*dot(u, grad(Υ)) ))
+problem.add_equation((h0*(dt(Υ) + div(u) + u@grad_Υ0) + lift(τ_u2,-1)@ez,
+                      -h0_g*u@grad(Υ) ))
 problem.add_equation((θ - (γ-1)*Υ - s_c_over_c_P*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
 #consider adding back in diffusive & source nonlinearities
 problem.add_equation((ρ0*s_c_over_c_P*dt(s)
-                      - R_inv/Pr*(lap(θ)+2*dot(grad_θ0,grad(θ)))
+                      - R_inv/Pr*(lap(θ)+2*grad_θ0@grad(θ))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
-                      - ρ0_g*s_c_over_c_P*dot(u,grad(s))
-                      + R_inv/Pr*dot(grad(θ),grad(θ))
+                      - ρ0_g*s_c_over_c_P*u@grad(s)
+                      + R_inv/Pr*grad(θ)@grad(θ)
                       + R_inv*Ma2*h0_inv_g*Phi  # + R_inv*Ma2*0.5*h0_inv_g*Phi
                       + source_g ))
-problem.add_equation((dot(ez,u)(z=0), 0))
-problem.add_equation((dot(ez, dot(ex,e))(z=0), 0))
-problem.add_equation((dot(ez,u)(z=Lz), 0))
-problem.add_equation((dot(ez, dot(ex,e))(z=Lz), 0))
-problem.add_equation((dot(ez,grad(θ))(z=0), 0))
+problem.add_equation((ez@u(z=0), 0))
+problem.add_equation((ez@(ex@e(z=0)), 0))
+problem.add_equation((ez@u(z=Lz), 0))
+problem.add_equation((ez@(ex@e(z=Lz)), 0))
+problem.add_equation((ez@grad(θ)(z=0), 0))
 problem.add_equation((θ(z=Lz), 0))
 logger.info("Problem built")
 
@@ -311,10 +301,10 @@ s0['g'] = 0
 
 ρ = ρ0*np.exp(Υ).evaluate()
 h = h0*np.exp(θ).evaluate()
-KE = 0.5*ρ*dot(u,u)
+KE = 0.5*ρ*u@u
 IE = 1/Ma2*ρ*h
 PE = -1/Ma2*ρ*h*(s+s0)
-Re = (ρ*R)*np.sqrt(dot(u,u))
+Re = (ρ*R)*np.sqrt(u@u)
 ω = -div(skew(u))
 KE.store_last = True
 PE.store_last = True
@@ -333,23 +323,23 @@ slice_output.add_task(ω, name='vorticity')
 slice_output.add_task(ω**2, name='enstrophy')
 # horizontal averages
 slice_output.add_task(x_avg(s), name='s(z)')
-slice_output.add_task(x_avg(-R_inv/Pr*dot(grad(h-h0),ez)), name='F_κ(z)')
-slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE(z)')
-slice_output.add_task(x_avg(dot(u,ez)*ρ*h), name='F_h(z)')
-slice_output.add_task(x_avg(-dot(u,ez)*ρ*h*s), name='F_PE(z)')
+slice_output.add_task(x_avg(-R_inv/Pr*grad(h-h0)@ez), name='F_κ(z)')
+slice_output.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
+slice_output.add_task(x_avg(u@ez*ρ*h), name='F_h(z)')
+slice_output.add_task(x_avg(-u@ez*ρ*h*s), name='F_PE(z)')
 #slice_output.add_task(x_avg(-h*source*z), name='F_source') # only valid for constant source
 slice_output.add_task(x_avg(-h*source), name='Q_source(z)')
 
-Ma_ad2 = Ma2*dot(u,u)*cP/(γ*h)
+Ma_ad2 = Ma2*u@u*cP/(γ*h)
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=np.inf)
-traces.add_task(avg(0.5*ρ*dot(u,u)), name='KE')
+traces.add_task(avg(0.5*ρ*u@u), name='KE')
 traces.add_task(avg(PE), name='PE')
 traces.add_task(avg(IE), name='IE')
 traces.add_task(avg(Re), name='Re')
 traces.add_task(avg(ω**2), name='enstrophy')
 traces.add_task(np.sqrt(avg(Ma_ad2)), name='Ma_ad')
-traces.add_task(x_avg(np.sqrt(dot(τ_u1,τ_u1))), name='τ_u1')
-traces.add_task(x_avg(np.sqrt(dot(τ_u2,τ_u2))), name='τ_u2')
+traces.add_task(x_avg(np.sqrt(τ_u1@τ_u1)), name='τ_u1')
+traces.add_task(x_avg(np.sqrt(τ_u2@τ_u2)), name='τ_u2')
 traces.add_task(x_avg(np.sqrt(τ_s1**2)), name='τ_s1')
 traces.add_task(x_avg(np.sqrt(τ_s2**2)), name='τ_s2')
 
