@@ -14,6 +14,9 @@ Options:
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
+    --no_slip                        Use no-slip boundary conditions
+
+
     --safety=<safety>                    CFL safety factor
     --SBDF2                              Use SBDF2
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
@@ -78,7 +81,11 @@ Ma2 = ε
 scrM = 1/Ma2
 s_c_over_c_P = scrS = 1 # s_c/c_P = 1
 
+no_slip = args['--no_slip']
+
 data_dir = sys.argv[0].split('.py')[0]
+if no_slip:
+    data_dir += '_NS'
 data_dir += "_nh{}_R{}_Pr{}".format(args['--n_h'], args['--R'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
 data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
@@ -240,28 +247,32 @@ problem = de.IVP([u, Υ, θ, s, τ_u1, τ_u2, τ_s1, τ_s2])
 problem.add_equation((ρ0*(dt(u) + 1/Ma2*(h0*grad(θ) + grad_h0*θ)
                       - 1/Ma2*s_c_over_c_P*h0*grad(s))
                       - R_inv*viscous_terms
-                      + lift(τ_u1,-1) + R_inv*lift(τ_u2,-2),
+                      + lift(τ_u1,-1) + lift(τ_u2,-2),
                       -ρ0_g*u@grad(u)
                       -1/Ma2*ρ0_grad_h0_g*(np.expm1(θ)-θ)
                       -1/Ma2*ρ0_h0_g*np.expm1(θ)*grad(θ)
                       +1/Ma2*scrS*ρ0_h0_g*np.expm1(θ)*grad(s)
                       ))
-problem.add_equation((h0*(dt(Υ) + div(u) + u@grad_Υ0) + lift(τ_u2,-1)@ez,
+problem.add_equation((h0*(dt(Υ) + div(u) + u@grad_Υ0) + R*lift(τ_u2,-1)@ez,
                       -h0_g*u@grad(Υ) ))
 problem.add_equation((θ - (γ-1)*Υ - s_c_over_c_P*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
 #consider adding back in diffusive & source nonlinearities
 problem.add_equation((ρ0*s_c_over_c_P*dt(s)
                       - R_inv/Pr*(lap(θ)+2*grad_θ0@grad(θ))
-                      + lift(τ_s1,-1) + R_inv/Pr*lift(τ_s2,-2),
+                      + lift(τ_s1,-1) + lift(τ_s2,-2),
                       - ρ0_g*s_c_over_c_P*u@grad(s)
                       + R_inv/Pr*grad(θ)@grad(θ)
                       + R_inv*Ma2*h0_inv_g*Phi  # + R_inv*Ma2*0.5*h0_inv_g*Phi
                       + source_g ))
-problem.add_equation((ez@u(z=0), 0))
-problem.add_equation((ez@(ex@e(z=0)), 0))
-problem.add_equation((ez@u(z=Lz), 0))
-problem.add_equation((ez@(ex@e(z=Lz)), 0))
+if no_slip:
+    problem.add_equation((u(z=0), 0))
+    problem.add_equation((u(z=Lz), 0))
+else:
+    problem.add_equation((ez@u(z=0), 0))
+    problem.add_equation((ez@(ex@e(z=0)), 0))
+    problem.add_equation((ez@u(z=Lz), 0))
+    problem.add_equation((ez@(ex@e(z=Lz)), 0))
 problem.add_equation((ez@grad(θ)(z=0), 0))
 problem.add_equation((θ(z=Lz), 0))
 logger.info("Problem built")
@@ -312,7 +323,7 @@ IE.store_last = True
 Re.store_last = True
 ω.store_last = True
 
-slice_dt = 0.1
+slice_dt = 0.2
 trace_dt = 0.1
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
