@@ -62,7 +62,7 @@ else:
 cP = γ/(γ-1)
 
 Ma2 = ε
-scrM = 1/Ma2
+#scrM = 1/Ma2
 s_c_over_c_P = scrS = 1 # s_c/c_P = 1
 
 no_slip = args['--no_slip']
@@ -77,15 +77,17 @@ dlog.setLevel(logging.WARNING)
 import dedalus.public as de
 from dedalus.extras import flow_tools
 
-logger.info("Ma2 = {:.3g}, Pr = {:.3g}, γ = {:.3g}".format(Ma2, Pr, γ))
+logger.info("Ma2 = {:.3g}, Pr = {:.3g}, γ = {:.3g}, ε={:.3g}".format(Ma2, Pr, γ, ε))
 
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
-h_slope = -1/(1+m)
+#h_slope = -1/(1+m)
+h_slope = -1/(1+m_ad)
 grad_φ = (γ-1)/γ
 
 n_h = float(args['--n_h'])
 Lz = -1/h_slope*(1-np.exp(-n_h))
+print(n_h, Lz, h_slope)
 
 dealias = 2
 c = de.CartesianCoordinates('z')
@@ -106,6 +108,7 @@ zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 lift1 = lambda A, n: de.Lift(A, zb1, n)
 lift = lambda A, n: de.Lift(A, zb2, n)
+τ_h1 = d.Field(name='τ_h1')
 τ_s1 = d.Field(name='τ_s1')
 τ_s2 = d.Field(name='τ_s2')
 τ_u1 = d.VectorField(c, name='τ_u1')
@@ -145,18 +148,19 @@ for f in [h0, s0, θ0, Υ0]:
 h0['g'] = h_bot + zd*h_slope #(Lz+1)-z
 θ0['g'] = np.log(h0).evaluate()['g']
 Υ0['g'] = (m_ad*θ0).evaluate()['g']
-s0['g'] = -ε*zd*1e-2
-source = (ε/h0).evaluate()
-source_g = de.Grid(source).evaluate()
-
-problem = de.NLBVP([h0, s0, Υ0, τ_s1, τ_s2])
-problem.add_equation((grad(h0),
-                     -grad_φ + h0*grad(s0) ))
-problem.add_equation((lap(h0)
+s0['g'] = 0
+#source = (ε/h0).evaluate()
+#source_g = de.Grid(source).evaluate()
+problem = de.NLBVP([h0, s0, Υ0, τ_s1, τ_s2, τ_h1])
+problem.add_equation((ez@grad(h0) + lift(τ_h1,-1),
+                     -grad_φ + ez@(h0*grad(s0)) ))
+problem.add_equation((-lap(h0)
 + lift(τ_s1,-1) + lift(τ_s2,-2), ε))
 problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0, np.log(h0)))
-problem.add_equation((ez@grad(h0)(z=0), 0))
-problem.add_equation((h0(z=Lz), 1))
+#problem.add_equation((ez@grad(h0)(z=0), 0))
+problem.add_equation((Υ0(z=0), 0))
+problem.add_equation((h0(z=0), 1))
+problem.add_equation((h0(z=Lz), np.exp(-n_h)))
 
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
@@ -165,12 +169,15 @@ ax2 = ax.twinx()
 solver = problem.build_solver(ncc_cutoff=1e-6)
 pert_norm = np.inf
 tolerance = 1e-6
+print("HS bal: \n{}".format((grad(h0)+grad_φ*ez - h0*grad(s0)).evaluate()['g']))
+print("Therm bal: \n{}".format((lap(h0) - ε).evaluate()['g']))
 while pert_norm > tolerance:
-    solver.newton_iteration()
-    pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
     ax.plot(zd, h0['g'])
     ax2.plot(zd, Υ0['g'], linestyle='dashed')
     ax2.plot(zd, s0['g'], linestyle='dotted')
+    solver.newton_iteration()
+    pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
+    logger.info(pert_norm)
 
 plt.show()
 
