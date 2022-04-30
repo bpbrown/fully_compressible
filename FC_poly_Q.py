@@ -122,7 +122,9 @@ logger.info("saving data in: {}".format(data_dir))
 
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
-h_slope = -1/(1+m)
+# generally, h_slope = -1/(1+m)
+# start in an adibatic state, heat from there
+h_slope = -1/(1+m_ad)
 grad_φ = (γ-1)/γ
 
 n_h = float(args['--n_h'])

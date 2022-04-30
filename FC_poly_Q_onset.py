@@ -43,6 +43,7 @@ from docopt import docopt
 args = docopt(__doc__)
 from fractions import Fraction
 
+from structure import heated_polytrope
 ncc_cutoff = float(args['--ncc_cutoff'])
 
 #Resolution
@@ -81,7 +82,8 @@ logger.info("Ma2 = {:.3g}, Pr = {:.3g}, γ = {:.3g}, ε={:.3g}".format(Ma2, Pr, 
 
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
-#h_slope = -1/(1+m)
+# generally, h_slope = -1/(1+m)
+# start in an adibatic state, heat from there
 h_slope = -1/(1+m_ad)
 grad_φ = (γ-1)/γ
 
@@ -108,7 +110,7 @@ zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 lift1 = lambda A, n: de.Lift(A, zb1, n)
 lift = lambda A, n: de.Lift(A, zb2, n)
-τ_h1 = d.Field(name='τ_h1')
+τ_h1 = d.VectorField(c,name='τ_h1')
 τ_s1 = d.Field(name='τ_s1')
 τ_s2 = d.Field(name='τ_s2')
 τ_u1 = d.VectorField(c, name='τ_u1')
@@ -126,6 +128,7 @@ dt = lambda A: de.TimeDerivative(A)
 
 integ = lambda A: de.Integrate(A, 'z')
 
+print(c.unit_vector_fields(d))
 ez, = c.unit_vector_fields(d)
 
 # stress-free bcs
@@ -137,50 +140,22 @@ trace_e = trace(e)
 trace_e.store_last = True
 Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 
-# NLBVP goes here
-# intial guess
+
+
+structure = heated_polytrope(nz, γ, ε, n_h)
 h0 = d.Field(name='h0', bases=zb)
 θ0 = d.Field(name='θ0', bases=zb)
 Υ0 = d.Field(name='Υ0', bases=zb)
 s0 = d.Field(name='s0', bases=zb)
-for f in [h0, s0, θ0, Υ0]:
-    f.change_scales(dealias)
-h0['g'] = h_bot + zd*h_slope #(Lz+1)-z
-θ0['g'] = np.log(h0).evaluate()['g']
-Υ0['g'] = (m_ad*θ0).evaluate()['g']
-s0['g'] = 0
-#source = (ε/h0).evaluate()
-#source_g = de.Grid(source).evaluate()
-problem = de.NLBVP([h0, s0, Υ0, τ_s1, τ_s2, τ_h1])
-problem.add_equation((ez@grad(h0) + lift(τ_h1,-1),
-                     -grad_φ + ez@(h0*grad(s0)) ))
-problem.add_equation((-lap(h0)
-+ lift(τ_s1,-1) + lift(τ_s2,-2), ε))
-problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0, np.log(h0)))
-#problem.add_equation((ez@grad(h0)(z=0), 0))
-problem.add_equation((Υ0(z=0), 0))
-problem.add_equation((h0(z=0), 1))
-problem.add_equation((h0(z=Lz), np.exp(-n_h)))
+h0['g'] = structure['h']['g']
+θ0['g'] = structure['θ']['g']
+Υ0['g'] = structure['Υ']['g']
+s0['g'] = structure['s']['g']
+logger.info(structure)
 
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots()
-ax2 = ax.twinx()
-# Solver
-solver = problem.build_solver(ncc_cutoff=1e-6)
-pert_norm = np.inf
-tolerance = 1e-6
-print("HS bal: \n{}".format((grad(h0)+grad_φ*ez - h0*grad(s0)).evaluate()['g']))
-print("Therm bal: \n{}".format((lap(h0) - ε).evaluate()['g']))
-while pert_norm > tolerance:
-    ax.plot(zd, h0['g'])
-    ax2.plot(zd, Υ0['g'], linestyle='dashed')
-    ax2.plot(zd, s0['g'], linestyle='dotted')
-    solver.newton_iteration()
-    pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
-    logger.info(pert_norm)
-
-plt.show()
-
+c = de.CartesianCoordinates('z')
+R_inv = d.Field(name='R_inv')
+ρ0 = np.exp(Υ0).evaluate()
 # Υ = ln(ρ), θ = ln(h)
 problem = de.EVP([u, Υ, θ, s, τ_u1, τ_u2, τ_s1, τ_s2], eigenvalue=R_inv)
 problem.add_equation((ρ0*(1/Ma2*(h0*grad(θ) + grad(h0)*θ)
@@ -188,13 +163,13 @@ problem.add_equation((ρ0*(1/Ma2*(h0*grad(θ) + grad(h0)*θ)
                       - R_inv*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       0 ))
-problem.add_equation((h0*(div(u) + u@grad(Υ0)) + 1/R*lift(τ_u2,-1)@ez,
+problem.add_equation((h0*(div(u) + u@grad(Υ0)) + R_inv*lift(τ_u2,-1)@ez,
                       0 ))
 problem.add_equation((θ - (γ-1)*Υ - s_c_over_c_P*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
 #consider adding back in diffusive & source nonlinearities
 problem.add_equation((ρ0*u@grad(s0)
-                      - R_inv/Pr*(lap(θ)+2*grad_θ0@grad(θ))
+                      - R_inv/Pr*(lap(θ)+2*grad(θ0)@grad(θ))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       0 ))
 if no_slip:
