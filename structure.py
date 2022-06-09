@@ -26,7 +26,7 @@ dlog.setLevel(logging.WARNING)
 dlog = logging.getLogger('matplotlib')
 dlog.setLevel(logging.WARNING)
 
-def heated_polytrope(nz, γ, ε, n_h,
+def heated_adiabatic_polytrope(nz, γ, ε, n_h,
                      tolerance = 1e-8,
                      ncc_cutoff = 1e-10,
                      dealias = 2,
@@ -63,7 +63,6 @@ def heated_polytrope(nz, γ, ε, n_h,
     θ = d.Field(name='θ', bases=b)
     Υ = d.Field(name='Υ', bases=b)
     s = d.Field(name='s', bases=b)
-    u = d.VectorField(c, name='u', bases=b)
 
     # Taus
     lift_basis = zb.clone_with(a=zb.a+2, b=zb.b+2)
@@ -71,15 +70,16 @@ def heated_polytrope(nz, γ, ε, n_h,
     lift_basis1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
     lift1 = lambda A, n: de.Lift(A, lift_basis1, n)
     τ_h1 = d.VectorField(c,name='τ_h1')
+    #τ_h1 = d.Field(name='τ_h1')
     τ_s1 = d.Field(name='τ_s1')
     τ_s2 = d.Field(name='τ_s2')
 
     # Parameters and operators
     lap = lambda A: de.Laplacian(A, c)
     grad = lambda A: de.Gradient(A, c)
-
-    ez, = c.unit_vector_fields(d)
-
+    dz = lambda A: de.Differentiate(A, c)
+    ez = d.VectorField(c,bases=zb)
+    ez['g'][-1]=1
     # NLBVP goes here
     # intial guess
     h0 = d.Field(name='h0', bases=zb)
@@ -100,10 +100,10 @@ def heated_polytrope(nz, γ, ε, n_h,
     problem.add_equation((-lap(h0)
     + lift(τ_s1,-1) + lift(τ_s2,-2), ε))
     problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0, np.log(h0)))
+    # go to integral density (mass) boundary condition --Geoff
+    problem.add_equation(((ez@grad(h0))(z=0), -1/(1+m_ad)))
     problem.add_equation((Υ0(z=0), 0))
-    problem.add_equation((h0(z=0), 1))
-    problem.add_equation((h0(z=Lz), np.exp(-n_h)))
-
+    problem.add_equation((Υ0(z=Lz), -m_ad*n_h))
     # Solver
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     pert_norm = np.inf
@@ -123,7 +123,9 @@ def heated_polytrope(nz, γ, ε, n_h,
         ax2.plot(zd, s0['g'], color='xkcd:brick red', label=r'$s$')
         ax.legend()
         ax2.legend()
-        fig.savefig('heated_polytrope_nh{}_eps{}_gamma{:.3g}.pdf'.format(n_h,ε,γ))
+        fig.savefig('heated_adiabatic_polytrope_nh{}_eps{:.3g}_gamma{:.3g}.pdf'.format(n_h,ε,γ))
+
+    print(h0(z=0).evaluate()['g'])
 
     for key in structure:
         structure[key].change_scales(1)
@@ -156,6 +158,6 @@ if __name__=='__main__':
 
     verbose = args['--verbose']
 
-    structure = heated_polytrope(nz, γ, ε, n_h, verbose=verbose)
+    structure = heated_adiabatic_polytrope(nz, γ, ε, n_h, verbose=verbose)
     for key in structure:
         print(structure[key], structure[key]['g'])
