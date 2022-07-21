@@ -243,6 +243,136 @@ def heated_polytrope(nz, γ, ε, n_h,
 
     return structure
 
+def heated_polytrope_log(nz, γ, ε, n_h,
+                     tolerance = 1e-8,
+                     ncc_cutoff = 1e-10,
+                     dealias = 2,
+                     verbose=False):
+
+    import dedalus.public as de
+
+    cP = γ/(γ-1)
+    m_ad = 1/(γ-1)
+
+    s_c_over_c_P = scrS = 1 # s_c/c_P = 1
+
+    logger.info("γ = {:.3g}, ε={:.3g}".format(γ, ε))
+
+    # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
+    h_bot = 1
+    # generally, h_slope = -1/(1+m)
+    # start in an adibatic state, heat from there
+    h_slope = -1/(1+m_ad)
+    grad_φ = (γ-1)/γ
+
+    Lz = -1/h_slope*(1-np.exp(-n_h))
+
+    print(n_h, Lz, h_slope)
+
+    c = de.CartesianCoordinates('z')
+    d = de.Distributor(c, dtype=np.float64)
+    zb = de.ChebyshevT(c.coords[-1], size=nz, bounds=(0, Lz), dealias=dealias)
+    b = zb
+    z = zb.local_grid(1)
+    zd = zb.local_grid(dealias)
+
+    # Fields
+    θ = d.Field(name='θ', bases=b)
+    Υ = d.Field(name='Υ', bases=b)
+    s = d.Field(name='s', bases=b)
+
+    # Taus
+    lift_basis = zb.clone_with(a=zb.a+2, b=zb.b+2)
+    lift = lambda A, n: de.Lift(A, lift_basis, n)
+    lift_basis1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
+    lift1 = lambda A, n: de.Lift(A, lift_basis1, n)
+    τ_h1 = d.VectorField(c,name='τ_h1')
+    #τ_h1 = d.Field(name='τ_h1')
+    τ_s1 = d.Field(name='τ_s1')
+    τ_s2 = d.Field(name='τ_s2')
+
+    # Parameters and operators
+    lap = lambda A: de.Laplacian(A, c)
+    grad = lambda A: de.Gradient(A, c)
+    integ = lambda A: de.Integrate(A, 'z')
+    ez, = c.unit_vector_fields(d)
+
+    # NLBVP goes here
+    # intial guess
+    h0 = d.Field(name='h0', bases=zb)
+    θ0 = d.Field(name='θ0', bases=zb)
+    Υ0 = d.Field(name='Υ0', bases=zb)
+    s0 = d.Field(name='s0', bases=zb)
+    structure = {'h':h0,'s':s0,'θ':θ0,'Υ':Υ0}
+    for key in structure:
+        structure[key].change_scales(dealias)
+        
+    # adiabatic polytrope initial guess
+    h0['g'] = h_bot + zd*h_slope #(Lz+1)-z
+    θ0['g'] = np.log(h0).evaluate()['g']
+    Υ0['g'] = (m_ad*θ0).evaluate()['g']
+    s0['g'] = 0
+    # isothermal atmosphere initial guess
+    h0['g'] = h_bot
+    θ0['g'] = np.log(h0).evaluate()['g']
+    grad_Υ0 = d.Field(name='grad_Υ0', bases=zb)
+    grad_Υ0['g'] = -grad_φ
+    Υ0['g'] = (integ(grad_Υ0)).evaluate()['g']
+    #
+    problem = de.NLBVP([θ0, s0, Υ0, τ_s1, τ_s2, τ_h1])
+    # problem.add_equation((grad(θ0) - grad(s0) - grad_φ*ez*θ + lift1(τ_h1,-1),
+    #                       -grad_φ*ez*(np.exp(-θ)+θ)))
+    problem.add_equation((grad(θ0) - grad(s0) + lift1(τ_h1,-1),
+                          -grad_φ*ez*(np.exp(-θ))))
+    # problem.add_equation((-lap(θ0) + ε*θ0 + lift(τ_s1,-1) + lift(τ_s2,-2),
+    #                       grad(θ0)@grad(θ0) + ε*(np.exp(-θ0)+θ0)))
+    problem.add_equation((-lap(θ0) + lift(τ_s1,-1) + lift(τ_s2,-2),
+                          grad(θ0)@grad(θ0) + ε*(np.exp(-θ0))))
+    problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0 - θ0, 0))
+    problem.add_equation((θ0(z=0), 0))
+    problem.add_equation((θ0(z=Lz), -n_h))
+    # integral density (mass) boundary condition --Geoff
+    problem.add_equation((integ(Υ0), 1))
+    # Solver
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
+    pert_norm = np.inf
+    while pert_norm > tolerance:
+        solver.newton_iteration()
+        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
+        logger.info('current perturbation norm = {:.3g}'.format(pert_norm))
+
+    # re-normalize density and entropy (Υ0(z=0)=0, s(z=0)=0)
+    Υ0 = (Υ0-Υ0(z=0)).evaluate()
+    Υ0.name='Υ0'
+    structure['Υ'] = Υ0
+    s0 = (s0-s0(z=0)).evaluate()
+    s0.name = 's0'
+    structure['s'] = s0
+
+    h0 = (np.exp(θ0)).evaluate()
+    h0.name = 'h0'
+    structure['h'] = h0
+
+    if verbose:
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        ax2 = ax.twinx()
+
+        ax.plot(zd, h0['g'], linestyle='dashed', color='xkcd:dark grey', label='h')
+        ax2.plot(zd, θ0['g'], label=r'$\ln h$')
+        ax2.plot(zd, Υ0['g'], label=r'$\ln \rho$')
+        ax2.plot(zd, s0['g'], color='xkcd:brick red', label=r'$s$')
+        ax.legend()
+        ax2.legend()
+        fig.savefig('heated_polytrope_log_nh{}_eps{:.3g}_gamma{:.3g}.pdf'.format(n_h,ε,γ))
+
+    for key in structure:
+        structure[key].change_scales(1)
+
+    return structure
+
+
+
 if __name__=='__main__':
     from docopt import docopt
     args = docopt(__doc__)
@@ -269,5 +399,9 @@ if __name__=='__main__':
     verbose = args['--verbose']
 
     structure = heated_polytrope(nz, γ, ε, n_h, verbose=verbose)
+    for key in structure:
+        print(structure[key], structure[key]['g'])
+
+    structure = heated_polytrope_log(nz, γ, ε, n_h, verbose=verbose)
     for key in structure:
         print(structure[key], structure[key]['g'])
