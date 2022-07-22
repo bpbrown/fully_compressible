@@ -202,7 +202,7 @@ def heated_polytrope(nz, γ, ε, n_h,
 
     problem = de.NLBVP([h0, s0, Υ0, τ_s1, τ_s2, τ_h1])
     problem.add_equation((grad(h0) + lift1(τ_h1,-1),
-                         -grad_φ*ez + h0*grad(s0)))
+                         -grad_φ*ez + h0*s_c_over_c_P*grad(s0)))
     problem.add_equation((-lap(h0) + lift(τ_s1,-1) + lift(τ_s2,-2), ε))
     problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0, np.log(h0)))
     problem.add_equation((h0(z=0), 1))
@@ -306,7 +306,7 @@ def heated_polytrope_log(nz, γ, ε, n_h,
     structure = {'h':h0,'s':s0,'θ':θ0,'Υ':Υ0}
     for key in structure:
         structure[key].change_scales(dealias)
-        
+
     # adiabatic polytrope initial guess
     h0['g'] = h_bot + zd*h_slope #(Lz+1)-z
     θ0['g'] = np.log(h0).evaluate()['g']
@@ -320,22 +320,24 @@ def heated_polytrope_log(nz, γ, ε, n_h,
     Υ0['g'] = (integ(grad_Υ0)).evaluate()['g']
     #
     problem = de.NLBVP([θ0, s0, Υ0, τ_s1, τ_s2, τ_h1])
-    # problem.add_equation((grad(θ0) - grad(s0) - grad_φ*ez*θ + lift1(τ_h1,-1),
-    #                       -grad_φ*ez*(np.exp(-θ)+θ)))
-    problem.add_equation((grad(θ0) - grad(s0) + lift1(τ_h1,-1),
-                          -grad_φ*ez*(np.exp(-θ))))
-    # problem.add_equation((-lap(θ0) + ε*θ0 + lift(τ_s1,-1) + lift(τ_s2,-2),
-    #                       grad(θ0)@grad(θ0) + ε*(np.exp(-θ0)+θ0)))
-    problem.add_equation((-lap(θ0) + lift(τ_s1,-1) + lift(τ_s2,-2),
-                          grad(θ0)@grad(θ0) + ε*(np.exp(-θ0))))
+    # problem.add_equation((grad(θ0) - s_c_over_c_P*grad(s0) + lift1(τ_h1,-1),
+    #                       -grad_φ*ez*(np.exp(-θ0))))
+    # problem.add_equation((-lap(θ0) + lift(τ_s1,-1) + lift(τ_s2,-2),
+    #                       grad(θ0)@grad(θ0) + ε*(np.exp(-θ0))))
+    problem.add_equation((grad(θ0) -grad_φ*ez*θ0 - s_c_over_c_P*grad(s0) + lift1(τ_h1,-1),
+                          -grad_φ*ez*(np.exp(-θ0)+θ0)))
+    problem.add_equation((-lap(θ0) + ε*θ0 + lift(τ_s1,-1) + lift(τ_s2,-2),
+                          grad(θ0)@grad(θ0) + ε*(np.exp(-θ0)+θ0)))
     problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0 - θ0, 0))
     problem.add_equation((θ0(z=0), 0))
     problem.add_equation((θ0(z=Lz), -n_h))
     # integral density (mass) boundary condition --Geoff
     problem.add_equation((integ(Υ0), 1))
+    #problem.add_equation((Υ0(z=0), 0))
     # Solver
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     pert_norm = np.inf
+
     while pert_norm > tolerance:
         solver.newton_iteration()
         pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
