@@ -320,20 +320,14 @@ def heated_polytrope_log(nz, γ, ε, n_h,
     Υ0['g'] = (integ(grad_Υ0)).evaluate()['g']
     #
     problem = de.NLBVP([θ0, s0, Υ0, τ_s1, τ_s2, τ_h1])
-    # problem.add_equation((grad(θ0) - s_c_over_c_P*grad(s0) + lift1(τ_h1,-1),
-    #                       -grad_φ*ez*(np.exp(-θ0))))
-    # problem.add_equation((-lap(θ0) + lift(τ_s1,-1) + lift(τ_s2,-2),
-    #                       grad(θ0)@grad(θ0) + ε*(np.exp(-θ0))))
-    problem.add_equation((grad(θ0) -grad_φ*ez*θ0 - s_c_over_c_P*grad(s0) + lift1(τ_h1,-1),
-                          -grad_φ*ez*(np.exp(-θ0)+θ0)))
-    problem.add_equation((-lap(θ0) + ε*θ0 + lift(τ_s1,-1) + lift(τ_s2,-2),
-                          grad(θ0)@grad(θ0) + ε*(np.exp(-θ0)+θ0)))
-    problem.add_equation(((γ-1)*Υ0 + s_c_over_c_P*γ*s0 - θ0, 0))
+    problem.add_equation((grad(θ0) - s_c_over_c_P*grad(s0) + lift1(τ_h1,-1),
+                          -grad_φ*ez*np.exp(-θ0) ))
+    problem.add_equation((-lap(θ0) + lift(τ_s1,-1) + lift(τ_s2,-2),
+                          grad(θ0)@grad(θ0) + ε*np.exp(-θ0) ))
+    problem.add_equation((s_c_over_c_P*γ*s0 + (γ-1)*Υ0 - θ0, 0))
     problem.add_equation((θ0(z=0), 0))
     problem.add_equation((θ0(z=Lz), -n_h))
-    # integral density (mass) boundary condition --Geoff
-    problem.add_equation((integ(Υ0), 1))
-    #problem.add_equation((Υ0(z=0), 0))
+    problem.add_equation((Υ0(z=0), 0))
     # Solver
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     pert_norm = np.inf
@@ -342,14 +336,6 @@ def heated_polytrope_log(nz, γ, ε, n_h,
         solver.newton_iteration()
         pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
         logger.info('current perturbation norm = {:.3g}'.format(pert_norm))
-
-    # re-normalize density and entropy (Υ0(z=0)=0, s(z=0)=0)
-    Υ0 = (Υ0-Υ0(z=0)).evaluate()
-    Υ0.name='Υ0'
-    structure['Υ'] = Υ0
-    s0 = (s0-s0(z=0)).evaluate()
-    s0.name = 's0'
-    structure['s'] = s0
 
     h0 = (np.exp(θ0)).evaluate()
     h0.name = 'h0'
@@ -401,9 +387,4 @@ if __name__=='__main__':
     verbose = args['--verbose']
 
     structure = heated_polytrope(nz, γ, ε, n_h, verbose=verbose)
-    for key in structure:
-        print(structure[key], structure[key]['g'])
-
     structure = heated_polytrope_log(nz, γ, ε, n_h, verbose=verbose)
-    for key in structure:
-        print(structure[key], structure[key]['g'])
