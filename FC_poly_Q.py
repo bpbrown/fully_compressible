@@ -97,18 +97,8 @@ logger = logging.getLogger(__name__)
 dlog = logging.getLogger('evaluator')
 dlog.setLevel(logging.WARNING)
 
-from dedalus.tools.config import config
-config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
-config['logging']['file_level'] = 'DEBUG'
-
-from dedalus.tools.parallel import Sync
-with Sync() as sync:
-    if sync.comm.rank == 0:
-        if not os.path.exists('{:s}/'.format(data_dir)):
-            os.mkdir('{:s}/'.format(data_dir))
-        logdir = os.path.join(data_dir,'logs')
-        if not os.path.exists(logdir):
-            os.mkdir(logdir)
+import dedalus.tools.logging as dedalus_logging
+dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
 
 import dedalus.public as de
 from dedalus.extras import flow_tools
@@ -118,7 +108,6 @@ logger.info("Ma2 = {:.3g}, R = {:.3g}, R_inv = {:.3g}, Pr = {:.3g}, γ = {:.3g}"
 
 logger.info(args)
 logger.info("saving data in: {}".format(data_dir))
-
 
 # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
 h_bot = 1
@@ -344,7 +333,7 @@ slice_output.add_task(x_avg(-u@ez*ρ*h*s), name='F_PE(z)')
 slice_output.add_task(x_avg(-h*source), name='Q_source(z)')
 
 Ma_ad2 = Ma2*u@u*cP/(γ*h)
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=np.inf)
+traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=trace_dt, max_writes=1e6)#np.inf)
 traces.add_task(avg(0.5*ρ*u@u), name='KE')
 traces.add_task(avg(PE), name='PE')
 traces.add_task(avg(IE), name='IE')
