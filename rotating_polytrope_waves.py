@@ -126,6 +126,7 @@ dx = lambda A: 1j*kx*A
 div = lambda A: de.Divergence(A, index=0) + dx(A@ex)
 lap = lambda A: de.Laplacian(A, c) + dx(dx(A))
 grad = lambda A: de.Gradient(A, c) + dx(A)*ex
+grad0 = lambda A: de.Gradient(A, c)
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
 
@@ -150,7 +151,10 @@ omega = d.Field(name='omega')
 ρ0 = np.exp(Υ0).evaluate()
 
 logger.info("NCC expansions:")
-for ncc in [ρ0, ρ0*h0, ρ0*grad(h0), h0*grad(Υ0), ρ0*grad(s0)]:
+grad_h0 = grad0(h0).evaluate()
+grad_s0 = grad0(s0).evaluate()
+grad_Υ0 = grad0(Υ0).evaluate()
+for ncc in [ρ0, ρ0*h0, ρ0*grad_h0, h0*grad_Υ0, ρ0*grad_s0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 logger.info("density scaleheights: {:.2g}".format((Υ0(z=0)-Υ0(z=Lz)).evaluate()['g'][0,0]))
 
@@ -158,11 +162,11 @@ logger.info("density scaleheights: {:.2g}".format((Υ0(z=0)-Υ0(z=Lz)).evaluate(
 # Υ = ln(ρ), θ = ln(h)
 dt = lambda A: omega*A
 problem = de.EVP([u, Υ, θ, s, τ_u1, τ_u2], eigenvalue=omega)
-problem.add_equation((ρ0*dt(u) + ρ0*(1/Ma2*(h0*grad(θ) + grad(h0)*θ)
-                      - 1/Ma2*scrS*h0*(grad(s) + θ*grad(s0)) )
+problem.add_equation((ρ0*dt(u) + ρ0*(1/Ma2*(h0*grad(θ) + grad_h0*θ)
+                      - 1/Ma2*scrS*h0*(grad(s) + θ*grad_s0) )
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       0 ))
-problem.add_equation((h0*(div(u) + u@grad(Υ0)) + lift(τ_u2,-1)@ez,
+problem.add_equation((h0*(div(u) + u@grad_Υ0) + lift(τ_u2,-1)@ez,
                       0 ))
 problem.add_equation((θ - (γ-1)*Υ - scrS*γ*s, 0)) #EOS, s_c/cP = scrS
 #TO-DO:
