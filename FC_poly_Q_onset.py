@@ -8,26 +8,18 @@ Usage:
     FC_poly_Q_onset.py [options]
 
 Options:
+    --kx=<kx>                            Horizontal mode [default: 3]
+
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_h=<n_h>                          Enthalpy scale heights [default: 0.5]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0.5]
     --m=<m>                              Polytopic index of our polytrope
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
-    --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
-    --no_slip                        Use no-slip boundary conditions
+    --no_slip                            Use no-slip boundary conditions
 
-
-    --safety=<safety>                    CFL safety factor
-    --SBDF2                              Use SBDF2
-    --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
-    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=aspect*nz
-
-    --run_time=<run_time>                Run time, in hours [default: 23.5]
-    --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
-    --run_time_iter=<run_time_iter>      Run time, number of iterations; if not set, n_iter=np.inf
 
     --ncc_cutoff=<ncc_cutoff>            Amplitude cutoff for NCCs [default: 1e-8]
 
@@ -48,6 +40,7 @@ ncc_cutoff = float(args['--ncc_cutoff'])
 
 #Resolution
 nz = int(args['--nz'])
+kx = float(args['--kx'])
 
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
@@ -92,8 +85,8 @@ Lz = -1/h_slope*(1-np.exp(-n_h))
 print(n_h, Lz, h_slope)
 
 dealias = 2
-c = de.CartesianCoordinates('z')
-d = de.Distributor(c, dtype=np.float64)
+c = de.CartesianCoordinates('x','z')
+d = de.Distributor(c, dtype=np.complex128)
 zb = de.ChebyshevT(c.coords[-1], size=nz, bounds=(0, Lz), dealias=dealias)
 b = zb
 z = zb.local_grid(1)
@@ -110,37 +103,28 @@ zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 lift1 = lambda A, n: de.Lift(A, zb1, n)
 lift = lambda A, n: de.Lift(A, zb2, n)
-τ_h1 = d.VectorField(c,name='τ_h1')
+τ_h1 = d.VectorField(c, name='τ_h1')
 τ_s1 = d.Field(name='τ_s1')
 τ_s2 = d.Field(name='τ_s2')
 τ_u1 = d.VectorField(c, name='τ_u1')
 τ_u2 = d.VectorField(c, name='τ_u2')
 
+ex, ez = c.unit_vector_fields(d)
+
 # Parameters and operators
-div = lambda A: de.Divergence(A, index=0)
-lap = lambda A: de.Laplacian(A, c)
-grad = lambda A: de.Gradient(A, c)
-#curl = lambda A: de.operators.Curl(A)
-cross = lambda A, B: de.CrossProduct(A, B)
+dx = lambda A: 1j*kx*A
+div = lambda A: de.Divergence(A, index=0) + dx(A@ex)
+lap = lambda A: de.Laplacian(A, c) + dx(dx(A))
+grad = lambda A: de.Gradient(A, c) + dx(A)*ex
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
 dt = lambda A: de.TimeDerivative(A)
 
-integ = lambda A: de.Integrate(A, 'z')
-
-print(c.unit_vector_fields(d))
-ez, = c.unit_vector_fields(d)
-
 # stress-free bcs
 e = grad(u) + trans(grad(u))
-e.store_last = True
 
 viscous_terms = div(e) - 2/3*grad(div(u))
 trace_e = trace(e)
-trace_e.store_last = True
-Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
-
-
 
 structure = heated_polytrope(nz, γ, ε, n_h)
 h0 = d.Field(name='h0', bases=zb)
@@ -153,7 +137,6 @@ h0['g'] = structure['h']['g']
 s0['g'] = structure['s']['g']
 logger.info(structure)
 
-c = de.CartesianCoordinates('z')
 R_inv = d.Field(name='R_inv')
 ρ0 = np.exp(Υ0).evaluate()
 # Υ = ln(ρ), θ = ln(h)
@@ -186,5 +169,7 @@ logger.info("Problem built")
 
 solver = problem.build_solver()
 solver.solve_dense(solver.subproblems[0])
-evals = np.sort(solver.eigenvalues)
+i_evals = np.argsort(solver.eigenvalues.real)
+evals = solver.eigenvalues[i_evals]
+evals = evals[np.isfinite(evals)]
 print(evals)
