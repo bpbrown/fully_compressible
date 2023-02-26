@@ -93,7 +93,7 @@ Lz = -1/h_slope*(1-np.exp(-n_h))
 print(n_h, Lz, h_slope)
 
 dealias = 2
-c = de.CartesianCoordinates('x','z')
+c = de.CartesianCoordinates('x', 'y', 'z')
 d = de.Distributor(c, dtype=np.complex128)
 zb = de.ChebyshevT(c.coords[-1], size=nz, bounds=(0, Lz), dealias=dealias)
 b = zb
@@ -117,7 +117,7 @@ lift = lambda A, n: de.Lift(A, zb2, n)
 τ_u1 = d.VectorField(c, name='τ_u1')
 τ_u2 = d.VectorField(c, name='τ_u2')
 
-ex, ez = c.unit_vector_fields(d)
+ex, ey, ez = c.unit_vector_fields(d)
 
 kx = d.Field(name='kx')
 
@@ -129,6 +129,7 @@ grad = lambda A: de.Gradient(A, c) + dx(A)*ex
 grad0 = lambda A: de.Gradient(A, c)
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
+cross = lambda A, B: de.CrossProduct(A, B)
 
 # stress-free bcs
 e = grad(u) + trans(grad(u))
@@ -147,6 +148,7 @@ h0['g'] = structure['h']['g']
 s0['g'] = structure['s']['g']
 logger.info(structure)
 
+Ω = (1e-1*ey).evaluate()
 omega = d.Field(name='omega')
 ρ0 = np.exp(Υ0).evaluate()
 
@@ -156,7 +158,7 @@ grad_s0 = grad0(s0).evaluate()
 grad_Υ0 = grad0(Υ0).evaluate()
 for ncc in [ρ0, ρ0*h0, ρ0*grad_h0, h0*grad_Υ0, ρ0*grad_s0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
-logger.info("density scaleheights: {:.2g}".format((Υ0(z=0)-Υ0(z=Lz)).evaluate()['g'][0,0]))
+logger.info("density scaleheights: {:.2g}".format((Υ0(z=0)-Υ0(z=Lz)).evaluate()['g'][0,0,0]))
 
 
 # Υ = ln(ρ), θ = ln(h)
@@ -164,6 +166,7 @@ dt = lambda A: omega*A
 problem = de.EVP([u, Υ, θ, s, τ_u1, τ_u2], eigenvalue=omega)
 problem.add_equation((ρ0*dt(u) + ρ0*(1/Ma2*(h0*grad(θ) + grad_h0*θ)
                       - 1/Ma2*scrS*h0*(grad(s) + θ*grad_s0) )
+                      + ρ0*2*cross(Ω, u)
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       0 ))
 problem.add_equation((h0*(div(u) + u@grad_Υ0) + lift(τ_u2,-1)@ez,
@@ -175,6 +178,8 @@ problem.add_equation((ρ0*dt(s) + ρ0*u@grad(s0),
                       0 ))
 problem.add_equation((ez@u(z=0), 0))
 problem.add_equation((ez@u(z=Lz), 0))
+problem.add_equation((ey@u(z=0), 0))
+problem.add_equation((ey@u(z=Lz), 0))
 #problem.add_equation((ez@grad(θ)(z=0), 0))
 problem.add_equation((θ(z=0), 0))
 problem.add_equation((θ(z=Lz), 0))
