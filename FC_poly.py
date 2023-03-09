@@ -6,8 +6,7 @@ Usage:
     FC_poly.py [options]
 
 Options:
-    --Rayleigh=<Rayleigh>                Rayleigh number (not used) [default: 1e4]
-    --mu=<mu>                            Viscosity [default: 0.0015]
+    --mu=<mu>                            Viscosity [default: 0.07]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_h=<n_h>                          Enthalpy scale heights [default: 0.5]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0.5]
@@ -27,6 +26,8 @@ Options:
     --run_time_iter=<run_time_iter>      Run time, number of iterations; if not set, n_iter=np.inf
 
     --ncc_cutoff=<ncc_cutoff>            Amplitude cutoff for NCCs [default: 1e-8]
+
+    --whole_sun
 
     --label=<label>                      Additional label for run output directory
 """
@@ -71,7 +72,6 @@ if run_time_iter != None:
 else:
     run_time_iter = np.inf
 
-Ra = Rayleigh = float(args['--Rayleigh']),
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
 
@@ -90,20 +90,13 @@ data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
 data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
+if args['--whole_sun']:
+    data_dir += '_wholesun'
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
 
-from dedalus.tools.config import config
-config['logging']['filename'] = os.path.join(data_dir,'logs/dedalus_log')
-config['logging']['file_level'] = 'DEBUG'
-
-with Sync() as sync:
-    if sync.comm.rank == 0:
-        if not os.path.exists('{:s}/'.format(data_dir)):
-            os.mkdir('{:s}/'.format(data_dir))
-        logdir = os.path.join(data_dir,'logs')
-        if not os.path.exists(logdir):
-            os.mkdir(logdir)
+import dedalus.tools.logging as dedalus_logging
+dedalus_logging.add_file_handler(data_dir+'/logs/dedalus_log', 'DEBUG')
 
 import dedalus.public as de
 from dedalus.extras import flow_tools
@@ -111,21 +104,26 @@ from dedalus.extras import flow_tools
 logger.info(args)
 logger.info("saving data in: {}".format(data_dir))
 
+if args['--whole_sun']:
+    theta = 10
+    h_bot = theta+1
+    h_slope = -theta
+    Lz = 1
+else:
+    # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
+    h_bot = 1
+    h_slope = -1/(1+m)
+    grad_φ = (γ-1)/γ
+    n_h = float(args['--n_h'])
+    Lz = -1/h_slope*(1-np.exp(-n_h))
 
-# this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
-h_bot = 1
-h_slope = -1/(1+m)
-grad_φ = (γ-1)/γ
-
-n_h = float(args['--n_h'])
-Lz = -1/h_slope*(1-np.exp(-n_h))
 Lx = float(args['--aspect'])*Lz
 
 dealias = 2
-c = de.CartesianCoordinates('x', 'z')
+c = de.CartesianCoordinates('x', 'y', 'z')
 d = de.Distributor(c, dtype=np.float64)
 xb = de.RealFourier(c.coords[0], size=nx, bounds=(0, Lx), dealias=dealias)
-zb = de.ChebyshevT(c.coords[1], size=nz, bounds=(0, Lz), dealias=dealias)
+zb = de.ChebyshevT(c.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
 b = (xb, zb)
 x = xb.local_grid(1)
 z = zb.local_grid(1)
@@ -139,74 +137,74 @@ u = d.VectorField(c, name='u', bases=b)
 # Taus
 zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
-lift1 = lambda A, n: de.LiftTau(A, zb1, n)
-lift = lambda A, n: de.LiftTau(A, zb2, n)
-τs1 = d.Field(name='τs1', bases=xb)
-τs2 = d.Field(name='τs2', bases=xb)
-τu1 = d.VectorField(c, name='τu1', bases=(xb,))
-τu2 = d.VectorField(c, name='τu2', bases=(xb,))
+lift1 = lambda A, n: de.Lift(A, zb1, n)
+lift = lambda A, n: de.Lift(A, zb2, n)
+τ_s1 = d.Field(name='τs1', bases=xb)
+τ_s2 = d.Field(name='τs2', bases=xb)
+τ_u1 = d.VectorField(c, name='τu1', bases=(xb,))
+τ_u2 = d.VectorField(c, name='τu2', bases=(xb,))
 
 # Parameters and operators
+ddt = lambda A: de.TimeDerivative(A)
 div = lambda A: de.Divergence(A, index=0)
 lap = lambda A: de.Laplacian(A, c)
 grad = lambda A: de.Gradient(A, c)
-#curl = lambda A: de.operators.Curl(A)
-dot = lambda A, B: de.DotProduct(A, B)
-cross = lambda A, B: de.CrossProduct(A, B)
+curl = lambda A: de.Curl(A)
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
-dt = lambda A: de.TimeDerivative(A)
 
 integ = lambda A: de.Integrate(de.Integrate(A, 'x'), 'z')
 avg = lambda A: integ(A)/(Lx*Lz)
-#x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 
-from dedalus.core.operators import Skew
-skew = lambda A: Skew(A)
-
-
-ex = d.VectorField(c, name='ex', bases=zb)
-ez = d.VectorField(c, name='ez', bases=zb)
-ex['g'][0] = 1
-ez['g'][1] = 1
+ex, ey, ez = c.unit_vector_fields(d)
 
 h0 = d.Field(name='h0', bases=zb)
-
-ln_cP = np.log(cP)
 h0['g'] = h_bot+h_slope*z
+
 θ0 = np.log(h0).evaluate()
 θ0.name = 'θ0'
 Υ0 = (m*(θ0)).evaluate() # normalize to zero at bottom
 Υ0.name = 'Υ0'
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
 s0.name = 's0'
-ρ0_inv = np.exp(-Υ0).evaluate()
-ρ0_inv.name = 'ρ0_inv'
+ρ0 = np.exp(Υ0).evaluate()
+ρ0.name = 'ρ0'
+grad_s0 = grad(s0).evaluate()
+grad_θ0 = grad(θ0).evaluate()
+grad_h0 = grad(h0).evaluate()
+grad_Υ0 = grad(Υ0).evaluate()
+
+h0_g = de.Grid(h0).evaluate()
+h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
+
+ρ0_g = de.Grid(ρ0).evaluate()
+ρ0_h0_g = de.Grid(ρ0*h0).evaluate()
+ρ0_grad_h0_g = de.Grid(ρ0*grad(h0)).evaluate()
+ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
 
 # stress-free bcs
 e = grad(u) + trans(grad(u))
-e.store_last = True
 
 viscous_terms = div(e) - 2/3*grad(div(u))
 trace_e = trace(e)
-trace_e.store_last = True
-Phi = 0.5*trace(dot(e, e)) - 1/3*(trace_e*trace_e)
+Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 
 Ma2 = 1 #ε
 Pr = 1
 
-μ = float(args['--mu'])
-κ = μ*cP/Pr # Mihalas & Mihalas eq (28.3)
+scrR = float(args['--mu'])
+scrP = scrR*Prandtl # Mihalas & Mihalas eq (28.3)
+
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
 delta_s = s_bot-s_top
-g = m+1
-pre = g*(delta_s)*Lz**3
-Ra_bot = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=0)).evaluate()['g']
-Ra_mid = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
-Ra_top = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
+# g = m+1
+# pre = g*(delta_s)*Lz**3
+# Ra_bot = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=0)).evaluate()['g']
+# Ra_mid = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
+# Ra_top = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
 
 Υ_bot = Υ0(z=0).evaluate()['g']
 Υ_top = Υ0(z=Lz).evaluate()['g']
@@ -215,46 +213,51 @@ Ra_top = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
 θ_top = θ0(z=Lz).evaluate()['g']
 
 if rank ==0:
-    logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
-    logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz/2, Ra_mid[0][0]))
-    logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
-    logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0][0]-s_top[0][0],s_bot[0][0],s_top[0][0]))
-    logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0][0]-θ_top[0][0],θ_bot[0][0],θ_top[0][0]))
-    logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0][0]-Υ_top[0][0],Υ_bot[0][0],Υ_top[0][0]))
-scale = d.Field(name='scale', bases=zb2)
-scale.require_scales(dealias)
-scale['g'] = h0['g']
-
-h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
-h0_grad_s0_g.name = 'h0_grad_s0_g'
-h0_g = de.Grid(h0).evaluate()
-h0_g.name = 'h0_g'
+    # logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
+    # logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz/2, Ra_mid[0][0]))
+    # logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
+    logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0,0,0]-s_top[0,0,0],s_bot[0,0,0],s_top[0,0,0]))
+    logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0,0,0]-θ_top[0,0,0],θ_bot[0,0,0],θ_top[0,0,0]))
+    logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0,0,0]-Υ_top[0,0,0],Υ_bot[0,0,0],Υ_top[0,0,0]))
 
 
-for ncc in [grad(Υ0), grad(h0), h0, np.exp(-Υ0), grad(s0)]:
-    logger.info('scaled {:} has  {:} terms'.format(ncc,(np.abs((scale*ncc).evaluate()['c'])>ncc_cutoff).sum()))
+logger.info("NCC expansions:")
+for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
+    logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 # Υ = ln(ρ), θ = ln(h)
-problem = de.IVP([Υ, u, s, θ, τu1, τu2, τs1, τs2])
-problem.add_equation((scale*(dt(Υ) + div(u) + dot(u, grad(Υ0))) + dot(lift(τu2,-1),ez),
-                      scale*(-dot(u, grad(Υ))) ))
+problem = de.IVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2])
 # check signs of terms in next equation for grad(h) terms...
-problem.add_equation((scale*(dt(u) + Ma2*cP*(grad(h0*θ)) \
-                      - Ma2*cP*(h0*grad(s) + h0*grad(s0)*θ) \
-                      - μ*ρ0_inv*viscous_terms) \
-                      + lift(τu2,-2) + lift(τu1,-1),
-                      scale*(-dot(u,grad(u)) \
-                                - Ma2*cP*(grad(h0*(np.expm1(θ)-θ))) \
-                                + Ma2*cP*(h0_g*np.expm1(θ)*grad(s) + h0_grad_s0_g*(np.expm1(θ)-θ))) )) # \
-#                      + μ*exp(-Υ0)*(exp(-Υ)-1)*viscous_terms))) # nonlinear density effects on viscosity
-problem.add_equation((scale*(dt(s) + dot(u,grad(s0)) - κ*ρ0_inv*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + lift(τs2,-2) + lift(τs1,-1),
-                      scale*(-dot(u,grad(s)) + κ*ρ0_inv*dot(grad(θ),grad(θ))) )) # need VH and nonlinear density effects on diffusion
-                      #  κ*exp(-Υ0)*(exp(-Υ)-1)*(lap(θ)+2*dot(grad(θ0),grad(θ)))) + κ*exp(-Υ0-Υ)*dot(grad(θ),grad(θ)))
+problem.add_equation((ρ0*ddt(u)
+                      + ρ0*grad_h0*θ
+                      + ρ0*h0*grad(θ)
+                      - ρ0*h0*grad(s)
+                      - ρ0*h0*grad_s0*θ
+                      - scrR*viscous_terms
+                      + lift(τ_u1,-1) + lift(τ_u2,-2),
+                      -ρ0_g*(u@grad(u))
+                      -ρ0_grad_h0_g*(np.expm1(θ)-θ)
+                      -ρ0_h0_g*np.expm1(θ)*grad(θ)
+                      +ρ0_h0_g*np.expm1(θ)*grad(s)
+                      +ρ0_h0_grad_s0_g*(np.expm1(θ)-θ) ))
+problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + 1/scrR*lift(τ_u2,-1)@ez,
+                      -h0_g*(u@grad(Υ)) ))
+problem.add_equation((h0*ρ0*(ddt(s))
+                      - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
+                      + lift(τ_s1,-1) + lift(τ_s2,-2),
+                      - ρ0_h0_g*(u@grad(s))
+                      + h0_g*scrP*grad(θ)@grad(θ) ))
+                      #+ Ek/Co2*0.5*h0_inv_g*Phi )) # figure this one out
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
+# boundary conditions
 problem.add_equation((θ(z=0), 0))
-problem.add_equation((u(z=0), 0))
+problem.add_equation((ez@u(z=0), 0))
+problem.add_equation((ez@(ex@e(z=0)), 0))
+problem.add_equation((ez@(ey@e(z=0)), 0))
 problem.add_equation((θ(z=Lz), 0))
-problem.add_equation((u(z=Lz), 0))
+problem.add_equation((ez@u(z=Lz), 0))
+problem.add_equation((ez@(ex@e(z=Lz)), 0))
+problem.add_equation((ez@(ey@e(z=Lz)), 0))
 logger.info("Problem built")
 
 # initial conditions
@@ -288,14 +291,11 @@ cfl.add_velocity(u)
 
 ρ = np.exp(Υ0+Υ).evaluate()
 h = h0*np.exp(θ).evaluate()
-KE = 0.5*ρ*dot(u,u)
+KE = 0.5*ρ*u@u
 IE = cP*Ma2*h*(s+s0)
-Re = (ρ/μ)*np.sqrt(dot(u,u))
-ω = -div(skew(u))
-KE.store_last = True
-IE.store_last = True
-Re.store_last = True
-ω.store_last = True
+Re = (ρ*scrR)*np.sqrt(u@u)
+ω = curl(u)
+κ = 1/scrP
 
 slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=0.125,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
@@ -303,19 +303,19 @@ slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
 slice_output.add_task(ω, name='vorticity')
 slice_output.add_task(ω**2, name='enstrophy')
-slice_output.add_task(x_avg(-κ*dot(grad(h),ez)/cP), name='F_κ')
-slice_output.add_task(x_avg(0.5*ρ*dot(u,ez)*dot(u,u)), name='F_KE')
-slice_output.add_task(x_avg(dot(u,ez)*h), name='F_h')
+slice_output.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ')
+slice_output.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE')
+slice_output.add_task(x_avg(u@ez*h), name='F_h')
 
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=np.inf)
-traces.add_task(avg(0.5*ρ*dot(u,u)), name='KE')
+traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=None)
+traces.add_task(avg(0.5*ρ*u@u), name='KE')
 traces.add_task(avg(IE), name='IE')
 traces.add_task(avg(Re), name='Re')
 traces.add_task(avg(ω**2), name='enstrophy')
-traces.add_task(x_avg(np.sqrt(dot(τu1,τu1))), name='τu1')
-traces.add_task(x_avg(np.sqrt(dot(τu2,τu2))), name='τu2')
-traces.add_task(x_avg(np.sqrt(τs1**2)), name='τs1')
-traces.add_task(x_avg(np.sqrt(τs2**2)), name='τs2')
+traces.add_task(x_avg(np.sqrt(τ_u1@τ_u1)), name='τ_u1')
+traces.add_task(x_avg(np.sqrt(τ_u2@τ_u2)), name='τ_u2')
+traces.add_task(x_avg(np.sqrt(τ_s1**2)), name='τ_s1')
+traces.add_task(x_avg(np.sqrt(τ_s2**2)), name='τ_s2')
 
 report_cadence = 10
 good_solution = True
@@ -324,10 +324,10 @@ flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(Re, name='Re')
 flow.add_property(KE, name='KE')
 flow.add_property(IE, name='IE')
-flow.add_property(τu1, name='τu1')
-flow.add_property(τu2, name='τu2')
-flow.add_property(τs1, name='τs1')
-flow.add_property(τs2, name='τs2')
+flow.add_property(τ_u1, name='τ_u1')
+flow.add_property(τ_u2, name='τ_u2')
+flow.add_property(τ_s1, name='τ_s1')
+flow.add_property(τ_s2, name='τ_s2')
 
 KE_avg = 0
 while solver.proceed and good_solution:
@@ -338,10 +338,10 @@ while solver.proceed and good_solution:
         IE_avg = flow.grid_average('IE')
         Re_avg = flow.grid_average('Re')
         Re_max = flow.max('Re')
-        τu1_max = flow.max('τu1')
-        τu2_max = flow.max('τu2')
-        τs1_max = flow.max('τs1')
-        τs2_max = flow.max('τs2')
+        τu1_max = flow.max('τ_u1')
+        τu2_max = flow.max('τ_u2')
+        τs1_max = flow.max('τ_s1')
+        τs2_max = flow.max('τ_s2')
         τ_max = np.max([τu1_max,τu2_max,τs1_max,τs2_max])
         log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}'.format(solver.iteration, solver.sim_time, Δt)
         log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(KE_avg, IE_avg, Re_avg, Re_max)
