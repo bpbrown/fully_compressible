@@ -21,9 +21,8 @@ Options:
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
 
-    --run_time=<run_time>                Run time, in hours [default: 23.5]
-    --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
-    --run_time_iter=<run_time_iter>      Run time, number of iterations; if not set, n_iter=np.inf
+    --tol=<tol>             Tolerance for opitimization loop [default: 1e-5]
+    --eigs=<eigs>           Target number of eigenvalues to search for [default: 20]
 
     --ncc_cutoff=<ncc_cutoff>            Amplitude cutoff for NCCs [default: 1e-8]
 
@@ -62,16 +61,6 @@ if nx is not None:
 else:
     nx = int(nz*float(args['--aspect']))
 
-run_time_buoy = args['--run_time_buoy']
-if run_time_buoy != None:
-    run_time_buoy = float(run_time_buoy)
-
-run_time_iter = args['--run_time_iter']
-if run_time_iter != None:
-    run_time_iter = int(float(run_time_iter))
-else:
-    run_time_iter = np.inf
-
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
 
@@ -89,7 +78,7 @@ cP = γ/(γ-1)
 data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
-data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
+data_dir += "_nz{:d}".format(nz)
 if args['--whole_sun']:
     data_dir += '_wholesun'
 if args['--label']:
@@ -121,11 +110,9 @@ Lx = float(args['--aspect'])*Lz
 
 dealias = 2
 c = de.CartesianCoordinates('x', 'y', 'z')
-d = de.Distributor(c, dtype=np.float64)
-xb = de.RealFourier(c.coords[0], size=nx, bounds=(0, Lx), dealias=dealias)
+d = de.Distributor(c, dtype=np.complex128)
 zb = de.ChebyshevT(c.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
-b = (xb, zb)
-x = xb.local_grid(1)
+b = (zb)
 z = zb.local_grid(1)
 
 # Fields
@@ -139,17 +126,20 @@ zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 lift1 = lambda A, n: de.Lift(A, zb1, n)
 lift = lambda A, n: de.Lift(A, zb2, n)
-τ_s1 = d.Field(name='τs1', bases=xb)
-τ_s2 = d.Field(name='τs2', bases=xb)
-τ_u1 = d.VectorField(c, name='τu1', bases=(xb,))
-τ_u2 = d.VectorField(c, name='τu2', bases=(xb,))
+τ_s1 = d.Field(name='τs1')
+τ_s2 = d.Field(name='τs2')
+τ_u1 = d.VectorField(c, name='τu1')
+τ_u2 = d.VectorField(c, name='τu2')
 
 # Parameters and operators
-ddt = lambda A: de.TimeDerivative(A)
-div = lambda A: de.Divergence(A, index=0)
-lap = lambda A: de.Laplacian(A, c)
-grad = lambda A: de.Gradient(A, c)
-curl = lambda A: de.Curl(A)
+grad0 = lambda A: de.Gradient(A, c)
+
+kx = d.Field(name='kx')
+dx = lambda A: 1j*kx*A
+div = lambda A: de.Divergence(A, index=0) + dx(A@ex)
+lap = lambda A: de.Laplacian(A, c) + dx(dx(A))
+grad = lambda A: de.Gradient(A, c) + dx(A)*ex
+curl = lambda A: de.Curl(A) - dx(A@ez)*ey + dx(A@ey)*ez
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
 
@@ -163,33 +153,21 @@ h0 = d.Field(name='h0', bases=zb)
 h0['g'] = h_bot+h_slope*z
 
 θ0 = np.log(h0).evaluate()
-θ0.name = 'θ0'
 Υ0 = (m*(θ0)).evaluate() # normalize to zero at bottom
-Υ0.name = 'Υ0'
 s0 = (1/γ*θ0 - (γ-1)/γ*Υ0).evaluate()
-s0.name = 's0'
 ρ0 = np.exp(Υ0).evaluate()
-ρ0.name = 'ρ0'
-grad_s0 = grad(s0).evaluate()
-grad_θ0 = grad(θ0).evaluate()
-grad_h0 = grad(h0).evaluate()
-grad_Υ0 = grad(Υ0).evaluate()
+grad_s0 = grad0(s0).evaluate()
+grad_θ0 = grad0(θ0).evaluate()
+grad_h0 = grad0(h0).evaluate()
+grad_Υ0 = grad0(Υ0).evaluate()
 
 h0_g = de.Grid(h0).evaluate()
-h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
+h0_grad_s0_g = de.Grid(h0*grad0(s0)).evaluate()
 
 ρ0_g = de.Grid(ρ0).evaluate()
 ρ0_h0_g = de.Grid(ρ0*h0).evaluate()
-ρ0_grad_h0_g = de.Grid(ρ0*grad(h0)).evaluate()
-ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
-
-# it's a polytrope, so the zero state is in thermal equilibrium.
-# θ0_RHS = dist.Field(name='θ0_RHS', bases=b)
-# θ0.change_scales(1)
-# θ0_RHS.require_grid_space()
-# if θ0['g'].size > 0:
-#     θ0_RHS['g'] = θ0['g']
-
+ρ0_grad_h0_g = de.Grid(ρ0*grad0(h0)).evaluate()
+ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad0(s0)).evaluate()
 
 # stress-free bcs
 e = grad(u) + trans(grad(u))
@@ -198,10 +176,9 @@ viscous_terms = div(e) - 2/3*grad(div(u))
 trace_e = trace(e)
 Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 
-Ma2 = 1 #ε
 Pr = 1
 
-scrR = float(args['--mu'])
+scrR = d.Field(name='scrR')
 scrP = scrR*Prandtl # Mihalas & Mihalas eq (28.3)
 
 s_bot = s0(z=0).evaluate()['g']
@@ -233,9 +210,12 @@ logger.info("NCC expansions:")
 for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
+omega = d.Field(name='omega')
+ddt = lambda A: omega*A
+
+
 # Υ = ln(ρ), θ = ln(h)
-problem = de.IVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2])
-# check signs of terms in next equation for grad(h) terms...
+problem = de.EVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2], eigenvalue=omega)
 problem.add_equation((ρ0*ddt(u)
                       + ρ0*grad_h0*θ
                       + ρ0*h0*grad(θ)
@@ -243,19 +223,13 @@ problem.add_equation((ρ0*ddt(u)
                       - ρ0*h0*grad_s0*θ
                       - scrR*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
-                      -ρ0_g*(u@grad(u))
-                      -ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      -ρ0_h0_g*np.expm1(θ)*grad(θ)
-                      +ρ0_h0_g*np.expm1(θ)*grad(s)
-                      +ρ0_h0_grad_s0_g*(np.expm1(θ)-θ) ))
+                      0 ))
 problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + 1/scrR*lift(τ_u2,-1)@ez,
-                      -h0_g*(u@grad(Υ)) ))
+                      0 ))
 problem.add_equation((h0*ρ0*(ddt(s))
                       - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
-                      - ρ0_h0_g*(u@grad(s))
-                      + h0_g*scrP*grad(θ)@grad(θ) ))
-                      #+ Ek/Co2*0.5*h0_inv_g*Phi )) # figure this one out
+                      0 ))
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 # boundary conditions
 problem.add_equation((θ(z=0), 0))
@@ -268,108 +242,58 @@ problem.add_equation((ez@(ex@e(z=Lz)), 0))
 problem.add_equation((ez@(ey@e(z=Lz)), 0))
 logger.info("Problem built")
 
-# initial conditions
-amp = 1e-4*Ma2
 
-zb, zt = zb.bounds
-noise = d.Field(name='noise', bases=b)
-noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
-noise.low_pass_filter(scales=0.25)
+solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 
-s['g'] = noise['g']*np.sin(np.pi*z/Lz)
-Υ['g'] = -γ/(γ-1)*s['g']
-θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
-
-if args['--SBDF2']:
-    ts = de.SBDF2
-    cfl_safety_factor = 0.3
-else:
-    ts = de.RK443
-    cfl_safety_factor = 0.4
-if args['--safety']:
-    cfl_safety_factor = float(args['--safety'])
-
-solver = problem.build_solver(ts, ncc_cutoff=ncc_cutoff)
-solver.stop_iteration = run_time_iter
-
-Δt = max_Δt = float(args['--max_dt'])
-cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold=0.1,
-                     max_change=1.5, min_change=0.5, max_dt=max_Δt)
-cfl.add_velocity(u)
-
-ρ = np.exp(Υ0+Υ).evaluate()
-h = h0*np.exp(θ).evaluate()
-KE = 0.5*ρ*u@u
-IE = cP*Ma2*h*(s+s0)
-Re = (ρ/scrR)*np.sqrt(u@u)
-ω = curl(u)
-κ = 1/scrP
-
-slice_dt = 0.5/np.sqrt(ε)
-
-slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
-slice_output.add_task(s+s0, name='s+s0')
-slice_output.add_task(s, name='s')
-slice_output.add_task(θ, name='θ')
-slice_output.add_task(ω, name='vorticity')
-slice_output.add_task(ω**2, name='enstrophy')
-slice_output.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ')
-slice_output.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE')
-slice_output.add_task(x_avg(u@ez*h), name='F_h')
-slice_output.add_task(grad(s0), name='grad_s0')
-slice_output.add_task(x_avg(grad(s0+s)), name='grad_s')
-slice_output.add_task(s0, name='s0(z)')
-slice_output.add_task(x_avg(s0+s), name='s(z)')
+N_eigs = int(float(args['--eigs']))
 
 
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=None)
-traces.add_task(avg(0.5*ρ*u@u), name='KE')
-traces.add_task(avg(IE), name='IE')
-traces.add_task(avg(Re), name='Re')
-traces.add_task(avg(ω**2), name='enstrophy')
-traces.add_task(x_avg(np.sqrt(τ_u1@τ_u1)), name='τ_u1')
-traces.add_task(x_avg(np.sqrt(τ_u2@τ_u2)), name='τ_u2')
-traces.add_task(x_avg(np.sqrt(τ_s1**2)), name='τ_s1')
-traces.add_task(x_avg(np.sqrt(τ_s2**2)), name='τ_s2')
+def compute_eigenvalues(scrR_i, kx_i):
+    scrR['g'] = scrR_i
+    kx['g'] = kx_i
+    logger.info('kx = {:.2e}, R = {:.6g}'.format(kx_i, scrR_i))
+    solver.solve_sparse(solver.subproblems[0], N=N_eigs, target=target, rebuild_matrices=True)
+    i_evals = np.argsort(solver.eigenvalues.real)
+    evals = solver.eigenvalues[i_evals]
+    #evals /= np.sqrt(current_Ra)
+    return(evals)
 
-report_cadence = 10
-good_solution = True
+def peak_growth_rate(*args):
+    evals = compute_eigenvalues(*args)
+    peak_eval = evals[-1]
+    # flip sign so minimize finds maximum
+    return np.abs(peak_eval.real)
 
-flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
-flow.add_property(Re, name='Re')
-flow.add_property(KE, name='KE')
-flow.add_property(IE, name='IE')
-flow.add_property(τ_u1, name='τ_u1')
-flow.add_property(τ_u2, name='τ_u2')
-flow.add_property(τ_s1, name='τ_s1')
-flow.add_property(τ_s2, name='τ_s2')
+dlog = logging.getLogger('matplotlib')
+dlog.setLevel(logging.WARNING)
 
-KE_avg = 0
-while solver.proceed and good_solution:
-    # advance
-    solver.step(Δt)
-    if solver.iteration % report_cadence == 0:
-        KE_avg = flow.grid_average('KE')
-        IE_avg = flow.grid_average('IE')
-        Re_avg = flow.grid_average('Re')
-        Re_max = flow.max('Re')
-        τu1_max = flow.max('τ_u1')
-        τu2_max = flow.max('τ_u2')
-        τs1_max = flow.max('τ_s1')
-        τs2_max = flow.max('τ_s2')
-        τ_max = np.max([τu1_max,τu2_max,τs1_max,τs2_max])
-        log_string = 'Iteration: {:5d}, Time: {:8.3e} ({:.1e}), dt: {:5.1e}'.format(solver.iteration, solver.sim_time, solver.sim_time*scrR, Δt)
-        log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(KE_avg, IE_avg, Re_avg, Re_max)
-        log_string += ', τ: {:.2g}'.format(τ_max)
-        logger.info(log_string)
-    Δt = cfl.compute_timestep()
-    good_solution = np.isfinite(Δt)*np.isfinite(KE_avg)
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots()
 
-if not good_solution:
-    logger.info("simulation terminated with good_solution = {}".format(good_solution))
-    logger.info("Δt = {}".format(Δt))
-    logger.info("KE = {}".format(KE_avg))
-    logger.info("τu = {}".format((τu1_max,τu2_max,τs1_max,τs2_max)))
+target = 0 + 1j*0
+scrR_i = float(args['--mu'])
+kxs = np.geomspace(0.1,10, num=20)
+peak_evals = []
+for kx_i in kxs:
+    evals = compute_eigenvalues(scrR_i, kx_i)
+    ax.scatter(evals.real, evals.imag, alpha=0.3)
+    peak_evals.append(evals[-1])
+ax.axhline(y=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
+ax.axvline(x=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
+ax.set_xlabel(r'$\omega_R$')
+ax.set_ylabel(r'$\omega_I$')
+ax.scatter(target.real, target.imag, marker='x', label='target',  color='xkcd:dark green', alpha=0.2, zorder=1)
+ax.legend()
+fig_filename = 'eigenspectrum'
+fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
 
-solver.log_stats()
-logger.debug("mode-stages/DOF = {}".format(solver.total_modes/(nx*nz)))
+peak_evals = np.array(peak_evals)
+i_max = np.argmax(peak_evals.real)
+print('peak growing mode: ω_r = {:.3g}, ω_i = {:.3g}, kx_i = {:.1e}'.format(peak_evals[i_max].real, peak_evals[i_max].imag, kxs[i_max]))
+fig, ax = plt.subplots()
+ax.scatter(kxs, peak_evals.real, alpha=0.5, label=r'$\omega_R$')
+ax.scatter(kxs, peak_evals.imag, alpha=0.5, label=r'$\omega_I$')
+ax.legend()
+ax.set_xscale('log')
+fig_filename = 'peak_omega_kx'
+fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
