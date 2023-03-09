@@ -37,7 +37,7 @@ else:
     data_dir = case +'/'
     output_path = pathlib.Path(data_dir).absolute()
 
-fields = ['s(z)', 'F_h(z)', 'F_κ(z)', 'F_KE(z)', 'F_PE(z)', 'Q_source(z)']
+fields = ['s(z)', 's0(z)'] #'F_h(z)', 'F_κ(z)', 'F_KE(z)', 'F_PE(z)', 'Q_source(z)']
 
 def accumulate_files(filename,start,count,file_list):
     if start==0:
@@ -53,8 +53,7 @@ times = None
 for file in file_list:
     logger.debug("opening file: {}".format(file))
     f = h5py.File(file, 'r')
-    #data_slices = (slice(None), 0, 0, slice(None))
-    data_slices = (slice(None), 0, slice(None))
+    data_slices = (slice(None), 0, 0, slice(None))
     for task in f['tasks']:
         if '(z)' in task: # fluxes denoted with 'f(z)'
             logger.info("task: {}".format(task))
@@ -63,7 +62,7 @@ for file in file_list:
             else:
                 data[task] = np.array(f['tasks'][task][data_slices])
             if z is None:
-                z = f['tasks'][task].dims[2][0][:]
+                z = f['tasks'][task].dims[3][0][:]
     if times is None:
         times = f['scales/sim_time'][:]
     else:
@@ -79,11 +78,13 @@ def time_avg(f, axis=0):
     return np.squeeze(np.sum(f, axis=axis))/n_avg
 
 s_avg = time_avg(data['s(z)'])
+s0_avg = time_avg(data['s0(z)'])
 fig_s, ax_s = plt.subplots(figsize=(4.5,4/1.5))
 fig_s.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
-for si in data['s(z)']:
-    ax_s.plot(z, si, alpha=0.3)
+# for si in data['s(z)', 's0(z)']:
+#     ax_s.plot(z, si, alpha=0.3)
 ax_s.plot(z, s_avg, linewidth=2, color='black')
+ax_s.plot(z, s0_avg, linewidth=2, color='black')
 fig_s.savefig('{:s}/thermal_profile.pdf'.format(str(output_path)))
 
 F_h = time_avg(data['F_h(z)'])

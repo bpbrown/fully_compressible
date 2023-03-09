@@ -183,6 +183,14 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 ρ0_grad_h0_g = de.Grid(ρ0*grad(h0)).evaluate()
 ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
 
+# it's a polytrope, so the zero state is in thermal equilibrium.
+# θ0_RHS = dist.Field(name='θ0_RHS', bases=b)
+# θ0.change_scales(1)
+# θ0_RHS.require_grid_space()
+# if θ0['g'].size > 0:
+#     θ0_RHS['g'] = θ0['g']
+
+
 # stress-free bcs
 e = grad(u) + trans(grad(u))
 
@@ -293,11 +301,13 @@ cfl.add_velocity(u)
 h = h0*np.exp(θ).evaluate()
 KE = 0.5*ρ*u@u
 IE = cP*Ma2*h*(s+s0)
-Re = (ρ*scrR)*np.sqrt(u@u)
+Re = (ρ/scrR)*np.sqrt(u@u)
 ω = curl(u)
 κ = 1/scrP
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=0.125,max_writes=20)
+slice_dt = 0.5/np.sqrt(ε)
+
+slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
@@ -306,6 +316,11 @@ slice_output.add_task(ω**2, name='enstrophy')
 slice_output.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ')
 slice_output.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE')
 slice_output.add_task(x_avg(u@ez*h), name='F_h')
+slice_output.add_task(grad(s0), name='grad_s0')
+slice_output.add_task(x_avg(grad(s0+s)), name='grad_s')
+slice_output.add_task(s0, name='s0(z)')
+slice_output.add_task(x_avg(s0+s), name='s(z)')
+
 
 traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=None)
 traces.add_task(avg(0.5*ρ*u@u), name='KE')
@@ -343,7 +358,7 @@ while solver.proceed and good_solution:
         τs1_max = flow.max('τ_s1')
         τs2_max = flow.max('τ_s2')
         τ_max = np.max([τu1_max,τu2_max,τs1_max,τs2_max])
-        log_string = 'Iteration: {:5d}, Time: {:8.3e}, dt: {:5.1e}'.format(solver.iteration, solver.sim_time, Δt)
+        log_string = 'Iteration: {:5d}, Time: {:8.3e} ({:.1e}), dt: {:5.1e}'.format(solver.iteration, solver.sim_time, solver.sim_time*scrR, Δt)
         log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(KE_avg, IE_avg, Re_avg, Re_max)
         log_string += ', τ: {:.2g}'.format(τ_max)
         logger.info(log_string)

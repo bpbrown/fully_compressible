@@ -32,7 +32,7 @@ else:
 
 f = h5py.File(file, 'r')
 data = {}
-data_slice = (slice(None),0,0) # valid for 2-D, need general approach
+data_slice = (slice(None),0,0,0)
 t = f['scales/sim_time'][:]
 for key in f['tasks']:
     data[key] = f['tasks/'+key][data_slice]
@@ -47,7 +47,7 @@ if args['--times']:
 else:
     subrange = False
 
-energy_keys = ['KE','IE','PE']
+energy_keys = ['KE','IE']#,'PE']
 
 fig_E, ax_E = plt.subplots(nrows=2)
 for key in energy_keys:
