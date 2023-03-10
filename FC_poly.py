@@ -250,7 +250,7 @@ problem.add_equation((ρ0*ddt(u)
                       +ρ0_h0_grad_s0_g*(np.expm1(θ)-θ) ))
 problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + 1/scrR*lift(τ_u2,-1)@ez,
                       -h0_g*(u@grad(Υ)) ))
-problem.add_equation((h0*ρ0*(ddt(s))
+problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
                       - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       - ρ0_h0_g*(u@grad(s))
