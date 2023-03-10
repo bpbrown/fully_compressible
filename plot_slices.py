@@ -37,17 +37,18 @@ def main(filename, start, count, tasks, output):
             center_zero=False
             title = task
             savename_func = lambda write: '{:s}_{:06d}.png'.format(title, write)
-            task = f['tasks'][task]
-            x = task.dims[1][0][:]
-            z = task.dims[2][0][:]
+            data = f['tasks'][task]
+            x = data.dims[1][0][:]
+            z = data.dims[3][0][:]
             Lz = np.max(z)-np.min(z)
             Lx = np.max(x)-np.min(x)
             figsize = (6.4, 1.2*Lz/Lx*6.4)
             for k in range(len(t)):
+                data_slice = (k,slice(None),0,slice(None))
                 time = t[k]
                 fig, ax = plt.subplots(1, figsize=figsize)
                 ax.set_aspect(1)
-                pcm = ax.pcolormesh(x, z, task[k,:].T, shading='nearest',cmap=cmap)
+                pcm = ax.pcolormesh(x, z, data[data_slice].T, shading='nearest',cmap=cmap)
                 pmin,pmax = pcm.get_clim()
                 if title == 'vorticity':
                     cmap = 'PiYG'
@@ -61,7 +62,7 @@ def main(filename, start, count, tasks, output):
                     logger.info("centering zero: {} -- 0 -- {}".format(pmin, pmax))
                 else:
                     cNorm = matplotlib.colors.Normalize(vmin=pmin, vmax=pmax)
-                pcm = ax.pcolormesh(x, z, task[k,:].T, shading='nearest',cmap=cmap, norm=cNorm)
+                pcm = ax.pcolormesh(x, z, data[data_slice].T, shading='nearest',cmap=cmap, norm=cNorm)
                 ax_cb = fig.add_axes([0.91, 0.4, 0.02, 1-0.4*2])
                 cb = fig.colorbar(pcm, cax=ax_cb)
                 cb.formatter.set_scientific(True)

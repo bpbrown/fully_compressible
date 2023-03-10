@@ -235,7 +235,6 @@ for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2])
-# check signs of terms in next equation for grad(h) terms...
 problem.add_equation((ρ0*ddt(u)
                       + ρ0*grad_h0*θ
                       + ρ0*h0*grad(θ)
@@ -277,12 +276,14 @@ noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
 s['g'] = noise['g']*np.sin(np.pi*z/Lz)
-Υ['g'] = -γ/(γ-1)*s['g']
-θ['g'] = γ*s['g'] + (γ-1)*Υ['g']
+Υ['g'] = -s['g']
+θ['g'] = -Υ['g']
+# lnP = θ + Υ = 0 --> θ = -Υ
+# s = 1/γ θ - (γ-1)/γ Υ = -1/γ Υ - (γ-1)/γ Υ = - Υ
 
 if args['--SBDF2']:
     ts = de.SBDF2
-    cfl_safety_factor = 0.3
+    cfl_safety_factor = 0.1
 else:
     ts = de.RK443
     cfl_safety_factor = 0.4
@@ -311,7 +312,7 @@ slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice
 slice_output.add_task(s+s0, name='s+s0')
 slice_output.add_task(s, name='s')
 slice_output.add_task(θ, name='θ')
-slice_output.add_task(ω, name='vorticity')
+slice_output.add_task(ω@ey, name='vorticity')
 slice_output.add_task(ω**2, name='enstrophy')
 slice_output.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ')
 slice_output.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE')

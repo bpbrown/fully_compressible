@@ -12,14 +12,8 @@ Options:
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 0.5]
     --m=<m>                              Polytopic index of our polytrope
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
-    --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
-
-    --safety=<safety>                    CFL safety factor
-    --SBDF2                              Use SBDF2
-    --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
-    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
 
     --tol=<tol>             Tolerance for opitimization loop [default: 1e-5]
     --eigs=<eigs>           Target number of eigenvalues to search for [default: 20]
@@ -55,11 +49,6 @@ ncc_cutoff = float(args['--ncc_cutoff'])
 
 #Resolution
 nz = int(args['--nz'])
-nx = args['--nx']
-if nx is not None:
-    nx = int(nx)
-else:
-    nx = int(nz*float(args['--aspect']))
 
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
@@ -77,7 +66,7 @@ cP = γ/(γ-1)
 
 data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
-data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
+data_dir += "_{}".format(strat_label)
 data_dir += "_nz{:d}".format(nz)
 if args['--whole_sun']:
     data_dir += '_wholesun'
@@ -105,8 +94,6 @@ else:
     grad_φ = (γ-1)/γ
     n_h = float(args['--n_h'])
     Lz = -1/h_slope*(1-np.exp(-n_h))
-
-Lx = float(args['--aspect'])*Lz
 
 dealias = 2
 c = de.CartesianCoordinates('x', 'y', 'z')
@@ -226,7 +213,7 @@ problem.add_equation((ρ0*ddt(u)
                       0 ))
 problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + 1/scrR*lift(τ_u2,-1)@ez,
                       0 ))
-problem.add_equation((h0*ρ0*(ddt(s))
+problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
                       - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       0 ))
