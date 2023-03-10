@@ -243,7 +243,7 @@ problem.add_equation((ρ0*ddt(u)
                       0 ))
 problem.add_equation((h0*(div(u) + u@grad_Υ0) + 1/scrR*lift(τ_u2,-1)@ez,
                       0 ))
-problem.add_equation((h0*ρ0*(ddt(s) - u@grad_s0)
+problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
                       - h0*scrP*(lap(s) + 2*grad_θ0@grad(s))
                       + lift(τ_s1,-1) + lift(τ_s2,-2),
                       0 ))
