@@ -206,10 +206,10 @@ ddt = lambda A: omega*A
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.EVP([Υ, u, T, τ_u1, τ_u2, τ_s1, τ_s2], eigenvalue=omega)
-problem.add_equation((ρ0*ddt(u)
-                      + ρ0*grad(T)
-                      + ρ0*h0*grad(Υ)
-                      + ρ0*grad_Υ0*T
+problem.add_equation((ρ0*(ddt(u)
+                      + grad(T)
+                      + h0*grad(Υ)
+                      + grad_Υ0*T)
                       - scrR*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       0 ))
