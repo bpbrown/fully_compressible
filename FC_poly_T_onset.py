@@ -15,6 +15,10 @@ Options:
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
 
+    --R_min=<R_min>         Min value of scrR [default: 0.1]
+    --R_max=<R_max>         Max value of scrR [default: 1]
+    --R_num=<R_num>         How many values of scrR to search [default: 11]
+
     --single_solve          If set, solve at single mu value.  Otherwise, find the critical value.
     --skip_optimization     If set, don't do the optimization loop
 
@@ -237,11 +241,8 @@ N_eigs = int(float(args['--eigs']))
 
 
 def compute_eigenvalues(kx_i, scrR_i, target):
-    # would be better to do an if type check, but can't figure out how while on plane
-    try:
+    if not np.isscalar(kx_i):
         kx_i = kx_i[0]
-    except:
-        pass
     scrR['g'] = scrR_i
     kx['g'] = kx_i
     logger.info('kx = {:.3g}, R = {:.6g}'.format(kx_i, scrR_i))
@@ -301,7 +302,7 @@ else:
 
     fig, ax = plt.subplots()
 
-    scrR_set = np.geomspace(1, 0.1, num=11)
+    scrR_set = np.geomspace(float(args['--R_max']), float(args['--R_min']), num=int(float(args['--R_num'])))
     for scrR_i in scrR_set:
         target = 0 + 1j*0
         growth_rates = []

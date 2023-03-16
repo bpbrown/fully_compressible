@@ -15,6 +15,14 @@ Options:
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
 
+    --R_min=<R_min>         Min value of scrR [default: 0.1]
+    --R_max=<R_max>         Max value of scrR [default: 1]
+    --R_num=<R_num>         How many values of scrR to search [default: 11]
+
+    --single_solve          If set, solve at single mu value.  Otherwise, find the critical value.
+    --skip_optimization     If set, don't do the optimization loop
+
+
     --tol=<tol>             Tolerance for opitimization loop [default: 1e-5]
     --eigs=<eigs>           Target number of eigenvalues to search for [default: 20]
 
@@ -235,10 +243,12 @@ solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 N_eigs = int(float(args['--eigs']))
 
 
-def compute_eigenvalues(scrR_i, kx_i):
+def compute_eigenvalues(kx_i, scrR_i, target):
+    if not np.isscalar(kx_i):
+        kx_i = kx_i[0]
     scrR['g'] = scrR_i
     kx['g'] = kx_i
-    logger.info('kx = {:.2e}, R = {:.6g}'.format(kx_i, scrR_i))
+    logger.info('kx = {:.3g}, R = {:.6g}'.format(kx_i, scrR_i))
     solver.solve_sparse(solver.subproblems[0], N=N_eigs, target=target, rebuild_matrices=True)
     i_evals = np.argsort(solver.eigenvalues.real)
     evals = solver.eigenvalues[i_evals]
@@ -249,38 +259,108 @@ def peak_growth_rate(*args):
     evals = compute_eigenvalues(*args)
     peak_eval = evals[-1]
     # flip sign so minimize finds maximum
-    return np.abs(peak_eval.real)
+    return -1*peak_eval.real
 
-dlog = logging.getLogger('matplotlib')
-dlog.setLevel(logging.WARNING)
+for system  in ['matplotlib', 'subsystems']:
+    dlog = logging.getLogger(system)
+    dlog.setLevel(logging.WARNING)
 
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
 
+kxs = np.geomspace(1,10, num=21)
+
 target = 0 + 1j*0
 scrR_i = float(args['--mu'])
-kxs = np.geomspace(0.1,10, num=20)
-peak_evals = []
-for kx_i in kxs:
-    evals = compute_eigenvalues(scrR_i, kx_i)
-    ax.scatter(evals.real, evals.imag, alpha=0.3)
-    peak_evals.append(evals[-1])
-ax.axhline(y=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
-ax.axvline(x=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
-ax.set_xlabel(r'$\omega_R$')
-ax.set_ylabel(r'$\omega_I$')
-ax.scatter(target.real, target.imag, marker='x', label='target',  color='xkcd:dark green', alpha=0.2, zorder=1)
-ax.legend()
-fig_filename = 'eigenspectrum'
-fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
+if args['--single_solve']:
+    peak_evals = []
+    for kx_i in kxs:
+        evals = compute_eigenvalues(kx_i, scrR_i, target)
+        ax.scatter(evals.real, evals.imag, alpha=0.3)
+        peak_evals.append(evals[-1])
+    ax.axhline(y=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
+    ax.axvline(x=0, linestyle='dashed', color='xkcd:dark grey', alpha=0.5, zorder=0)
+    ax.set_xlabel(r'$\omega_R$')
+    ax.set_ylabel(r'$\omega_I$')
+    ax.scatter(target.real, target.imag, marker='x', label='target',  color='xkcd:dark green', alpha=0.2, zorder=1)
+    ax.legend()
+    fig_filename = 'eigenspectrum'
+    fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
 
-peak_evals = np.array(peak_evals)
-i_max = np.argmax(peak_evals.real)
-print('peak growing mode: ω_r = {:.3g}, ω_i = {:.3g}, kx_i = {:.1e}'.format(peak_evals[i_max].real, peak_evals[i_max].imag, kxs[i_max]))
-fig, ax = plt.subplots()
-ax.scatter(kxs, peak_evals.real, alpha=0.5, label=r'$\omega_R$')
-ax.scatter(kxs, peak_evals.imag, alpha=0.5, label=r'$\omega_I$')
-ax.legend()
-ax.set_xscale('log')
-fig_filename = 'peak_omega_kx'
-fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
+    peak_evals = np.array(peak_evals)
+    i_max = np.argmax(peak_evals.real)
+    print('peak growing mode: ω_r = {:.3g}, ω_i = {:.3g}, kx_i = {:.1e}'.format(peak_evals[i_max].real, peak_evals[i_max].imag, kxs[i_max]))
+    fig, ax = plt.subplots()
+    ax.scatter(kxs, peak_evals.real, alpha=0.5, label=r'$\omega_R$')
+    ax.scatter(kxs, peak_evals.imag, alpha=0.5, label=r'$\omega_I$')
+    ax.legend()
+    ax.set_xscale('log')
+    fig_filename = 'peak_omega_kx'
+    fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
+else:
+    import scipy.optimize as sciop
+    bounds = sciop.Bounds(lb=np.min(kxs), ub=np.max(kxs))
+    peaks = {'σ':[], 'k':[], 'scrR':[]}
+    discrete_peaks = {'σ':[], 'k':[], 'scrR':[]}
+
+    fig, ax = plt.subplots()
+
+    scrR_set = np.geomspace(float(args['--R_max']), float(args['--R_min']), num=int(float(args['--R_num'])))
+    for scrR_i in scrR_set:
+        target = 0 + 1j*0
+        growth_rates = []
+        for kx_i in kxs:
+            evals = compute_eigenvalues(kx_i, scrR_i, target=target)
+            growth_rates.append(evals[-1])
+        growth_rates = np.array(growth_rates)
+        i_peak = np.argmax(growth_rates)
+        kx_i = kxs[i_peak]
+        target = growth_rates[i_peak]
+        discrete_peaks['σ'].append(target)
+        discrete_peaks['k'].append(kx_i)
+        discrete_peaks['scrR'].append(scrR_i)
+        p = ax.scatter(kxs, growth_rates.real, alpha=0.5, label='{:.2g}'.format(scrR_i))
+
+        optimize = not args['--skip_optimization']
+        if optimize:
+            target = 0 + 1j*0
+            result = sciop.minimize(peak_growth_rate, kx_i, args=(scrR_i, target), method='Nelder-Mead', bounds=bounds, tol=1e-3)
+
+            # obtain full complex rate
+            peak_evals = compute_eigenvalues(kx_i, scrR_i, target)
+            σ = peak_evals[-1]
+            ax.scatter(kx_i, σ.real, c='xkcd:dark grey', marker='x', alpha=0.5)
+
+            logger.info('peak search: start at scrR = {:.4g}, kx = {:.4g}, found σ_max = {:.2g},{:.2g}i, kx = {:.4g}'.format(scrR_i, kx_i, σ.real, σ.imag, result.x[0]))
+            peaks['σ'].append(σ)
+            peaks['k'].append(result.x[0])
+            peaks['scrR'].append(scrR_i)
+
+    if not optimize:
+        peaks=discrete_peaks
+    for key in peaks:
+        peaks[key] = np.array(peaks[key])
+
+    ax.plot(peaks['k'], peaks['σ'].real, linestyle='dotted', color='xkcd:dark grey')
+    ax.axhline(y=0, color='xkcd:dark grey', linestyle='dashed')
+    from scipy.interpolate import interp1d
+    f_σR_scrR = interp1d(peaks['σ'].real, peaks['scrR'])
+    f_σ_scrR = interp1d(peaks['scrR'], peaks['σ'])
+    f_k_scrR = interp1d(peaks['scrR'], peaks['k'])
+
+    print(peaks)
+    print(discrete_peaks)
+    crit_scrR = f_σR_scrR(0)
+    crit_k = f_k_scrR(crit_scrR)
+    crit_σ = f_σ_scrR(crit_scrR)
+
+    logger.info('Critical point, based on interpolation:')
+    logger.info('scrR = {:}, k = {:}'.format(crit_scrR, crit_k))
+    logger.info('σ = {:}, {:}i'.format(crit_σ.real, crit_σ.imag))
+
+    ax.scatter(crit_k, crit_σ.real, marker='s', label=r'$\mathcal{R}$'+': {:.3g}'.format(crit_scrR))
+
+    ax.legend()
+    ax.set_xscale('log')
+    fig_filename = 'critical_curve'
+    fig.savefig(data_dir+'/'+fig_filename+'.png', dpi=300)
