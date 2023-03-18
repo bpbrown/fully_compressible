@@ -276,10 +276,10 @@ noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
 s['g'] = noise['g']*np.sin(np.pi*z/Lz)
-Υ['g'] = -s['g']
-θ['g'] = -Υ['g']
+θ['g'] = s['g']
+Υ['g'] = -θ['g']
 # lnP = θ + Υ = 0 --> θ = -Υ
-# s = 1/γ θ - (γ-1)/γ Υ = -1/γ Υ - (γ-1)/γ Υ = - Υ
+# s = 1/γ θ - (γ-1)/γ Υ = 1/γ θ + (γ-1)/γ θ = θ
 
 if args['--SBDF2']:
     ts = de.SBDF2
