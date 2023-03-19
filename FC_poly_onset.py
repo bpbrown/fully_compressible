@@ -30,6 +30,8 @@ Options:
 
     --whole_sun
 
+    --no_slip
+
     --label=<label>                      Additional label for run output directory
 """
 
@@ -61,6 +63,8 @@ nz = int(args['--nz'])
 Pr = Prandtl = float(args['--Prandtl'])
 γ  = float(Fraction(args['--gamma']))
 
+no_slip = args['--no_slip']
+
 m_ad = 1/(γ-1)
 if args['--m']:
     m = float(args['--m'])
@@ -78,6 +82,8 @@ data_dir += "_{}".format(strat_label)
 data_dir += "_nz{:d}".format(nz)
 if args['--whole_sun']:
     data_dir += '_wholesun'
+if no_slip:
+    data_dir += '_no-slip'
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
 
@@ -228,13 +234,19 @@ problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 # boundary conditions
 problem.add_equation((θ(z=0), 0))
-problem.add_equation((ez@u(z=0), 0))
-problem.add_equation((ez@(ex@e(z=0)), 0))
-problem.add_equation((ez@(ey@e(z=0)), 0))
+if no_slip:
+    problem.add_equation((u(z=0), 0))
+else:
+    problem.add_equation((ez@u(z=0), 0))
+    problem.add_equation((ez@(ex@e(z=0)), 0))
+    problem.add_equation((ez@(ey@e(z=0)), 0))
 problem.add_equation((θ(z=Lz), 0))
-problem.add_equation((ez@u(z=Lz), 0))
-problem.add_equation((ez@(ex@e(z=Lz)), 0))
-problem.add_equation((ez@(ey@e(z=Lz)), 0))
+if no_slip:
+    problem.add_equation((u(z=Lz), 0))
+else:
+    problem.add_equation((ez@u(z=Lz), 0))
+    problem.add_equation((ez@(ex@e(z=Lz)), 0))
+    problem.add_equation((ez@(ey@e(z=Lz)), 0))
 logger.info("Problem built")
 
 

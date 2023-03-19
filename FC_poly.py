@@ -29,6 +29,8 @@ Options:
 
     --whole_sun
 
+    --no-slip                            Apply no-slip boundary conditions
+
     --label=<label>                      Additional label for run output directory
 """
 
@@ -54,6 +56,8 @@ dlog.setLevel(logging.WARNING)
 
 ncc_cutoff = float(args['--ncc_cutoff'])
 
+no_slip = args['--no-slip']
+
 #Resolution
 nz = int(args['--nz'])
 nx = args['--nx']
@@ -61,6 +65,8 @@ if nx is not None:
     nx = int(nx)
 else:
     nx = int(nz*float(args['--aspect']))
+
+run_time_wall = float(args['--run_time'])*3600
 
 run_time_buoy = args['--run_time_buoy']
 if run_time_buoy != None:
@@ -137,13 +143,12 @@ u = d.VectorField(c, name='u', bases=b)
 # Taus
 zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
-#lift1 = lambda A, n: de.Lift(A, zb1, n)
-#lift = lambda A, n: de.Lift(A, zb2, n)
-lift = lambda A, n: de.Lift(A, zb, n)
+lift1 = lambda A, n: de.Lift(A, zb1, n)
+lift = lambda A, n: de.Lift(A, zb2, n)
 τ_s1 = d.Field(name='τs1', bases=xb)
 τ_s2 = d.Field(name='τs2', bases=xb)
-τ_u1 = d.VectorField(c, name='τu1', bases=(xb,))
-τ_u2 = d.VectorField(c, name='τu2', bases=(xb,))
+τ_u1 = d.VectorField(c, name='τu1', bases=xb)
+τ_u2 = d.VectorField(c, name='τu2', bases=xb)
 
 # Parameters and operators
 ddt = lambda A: de.TimeDerivative(A)
@@ -193,6 +198,8 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 
 
 # stress-free bcs
+grad_u = grad(u) + lift1(τ_u2,-1)*ez
+e_bc = grad_u + trans(grad_u)
 e = grad(u) + trans(grad(u))
 
 viscous_terms = div(e) - 2/3*grad(div(u))
@@ -236,20 +243,20 @@ for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.IVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2])
-problem.add_equation((ρ0*ddt(u)
-                      + ρ0*grad_h0*θ
-                      + ρ0*h0*grad(θ)
-                      - ρ0*h0*grad(s)
-                      - ρ0*h0*grad_s0*θ
+problem.add_equation((ρ0*(ddt(u)
+                      + grad_h0*θ
+                      + h0*grad(θ)
+                      - h0*grad(s)
+                      - h0*grad_s0*θ)
                       - scrR*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       -ρ0_g*(u@grad(u))
                       -ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      #-ρ0_h0_g*np.expm1(θ)*grad(θ) # these is the problem term
+                      -ρ0_h0_g*np.expm1(θ)*grad(θ) # these is the problem term
                       +ρ0_h0_g*np.expm1(θ)*grad(s)
                       +ρ0_h0_grad_s0_g*(np.expm1(θ)-θ)
                       ))
-problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + 1/scrR*lift(τ_u2,-1)@ez,
+problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + h0/scrR*lift1(τ_u2,-1)@ez,
                       -h0_g*(u@grad(Υ)) ))
 problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
                       - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
@@ -261,13 +268,23 @@ problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 # boundary conditions
 problem.add_equation((θ(z=0), 0))
-problem.add_equation((ez@u(z=0), 0))
-problem.add_equation((ez@(ex@e(z=0)), 0))
-problem.add_equation((ez@(ey@e(z=0)), 0))
+if no_slip:
+    problem.add_equation((u(z=0), 0))
+else:
+    problem.add_equation((ez@u(z=0), 0))
+    problem.add_equation((ez@(ex@e_bc(z=0)), 0))
+    problem.add_equation((ez@(ey@e_bc(z=0)), 0))
+#    problem.add_equation((ez@(ex@e(z=0))+ex@(lift1(τ_u2,-1)(z=0)), 0))
+#    problem.add_equation((ez@(ey@e(z=0))+ey@(lift1(τ_u2,-1)(z=0)), 0))
 problem.add_equation((θ(z=Lz), 0))
-problem.add_equation((ez@u(z=Lz), 0))
-problem.add_equation((ez@(ex@e(z=Lz)), 0))
-problem.add_equation((ez@(ey@e(z=Lz)), 0))
+if no_slip:
+    problem.add_equation((u(z=Lz), 0))
+else:
+    problem.add_equation((ez@u(z=Lz), 0))
+    problem.add_equation((ez@(ex@e_bc(z=Lz)), 0))
+    problem.add_equation((ez@(ey@e_bc(z=Lz)), 0))
+#    problem.add_equation((ez@(ex@e(z=Lz))+ex@(lift1(τ_u2,-1)(z=Lz)), 0))
+#    problem.add_equation((ez@(ey@e(z=Lz))+ey@(lift1(τ_u2,-1)(z=Lz)), 0))
 logger.info("Problem built")
 
 # initial conditions
@@ -295,6 +312,8 @@ if args['--safety']:
 
 solver = problem.build_solver(ts, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
+#solver.stop_sim_time =
+solver.stop_wall_time = run_time_wall
 
 Δt = max_Δt = float(args['--max_dt'])
 cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold=0.1,
