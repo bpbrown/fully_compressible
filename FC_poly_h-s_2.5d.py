@@ -37,6 +37,8 @@ Options:
 import numpy as np
 from mpi4py import MPI
 rank = MPI.COMM_WORLD.rank
+nproc = MPI.COMM_WORLD.size
+
 from dedalus.tools.parallel import Sync
 
 from docopt import docopt
@@ -129,7 +131,7 @@ dtype = np.float64
 
 dealias = 2
 coords = de.CartesianCoordinates('y', 'x', 'z', right_handed=False)
-dist = de.Distributor(coords, dtype=dtype)
+dist = de.Distributor(coords, mesh=[1,nproc], dtype=dtype)
 xb = de.RealFourier(coords['x'], size=nx, bounds=(0, Lx), dealias=dealias)
 zb = de.ChebyshevT(coords['z'],  size=nz, bounds=(0, Lz), dealias=dealias)
 b = (xb, zb)
@@ -139,6 +141,7 @@ z = dist.local_grid(zb)
 # Fields
 θ = dist.Field(name='θ', bases=b)
 Υ = dist.Field(name='Υ', bases=b)
+h1 = dist.Field(name='h1', bases=b)
 s = dist.Field(name='s', bases=b)
 u = dist.VectorField(coords, name='u', bases=b)
 
@@ -184,6 +187,7 @@ grad_h0 = grad(h0).evaluate()
 grad_Υ0 = grad(Υ0).evaluate()
 
 h0_g = de.Grid(h0).evaluate()
+h0_inv_g = de.Grid(1/h0).evaluate()
 h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 
 ρ0_g = de.Grid(ρ0).evaluate()
@@ -238,43 +242,39 @@ if rank ==0:
 
 
 logger.info("NCC expansions:")
-for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
+for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0, 1/h0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 
 # Υ = ln(ρ), θ = ln(h)
-vars = [Υ, u, s, θ]
+vars = [Υ, u, s, h1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2]
 τ_u = lift(τ_u1,-1) + lift(τ_u2,-2)
 τ_s = lift(τ_s1,-1) + lift(τ_s2,-2)
 
 problem = de.IVP(vars+taus)
 problem.add_equation((ρ0*(ddt(u)
-                      + grad_h0*θ
-                      + h0*grad(θ)
+                      + grad(h1)
                       - h0*grad(s)
-                      - h0*grad_s0*θ)
+                      - h1*grad_s0)
                       - scrR*(viscous_terms)
                       + τ_u,
                       -ρ0_g*(u@grad(u))
-                      -ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      -ρ0_h0_g*grad(np.expm1(θ)-θ)
-                      +ρ0_h0_g*np.expm1(θ)*grad(s)
-                      +ρ0_h0_grad_s0_g*(np.expm1(θ)-θ)
+                      +ρ0_g*h1*grad(s)
                       ))
 problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + h0/scrR*lift1(τ_u2,-1)@ez,
                       -h0_g*(u@grad(Υ)) ))
 problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
-                      - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
+                      - h0*scrP*lap(h1)
                       + τ_s,
                       - ρ0_h0_g*(u@grad(s))
-                      + h0_g*scrP*grad(θ)@grad(θ)
                       ))
                       #+ Ek/Co2*0.5*h0_inv_g*Phi )) # figure this one out
-problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
+#EOS, cP absorbed into s.
+problem.add_equation((h0*((γ-1)*Υ + γ*s)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
 # boundary conditions
-problem.add_equation((θ(z=0), 0))
-problem.add_equation((θ(z=Lz), 0))
+problem.add_equation((h1(z=0), 0))
+problem.add_equation((h1(z=Lz), 0))
 if no_slip:
     problem.add_equation((u(z=0), 0))
     problem.add_equation((u(z=Lz), 0))
@@ -298,6 +298,8 @@ noise.low_pass_filter(scales=0.25)
 s['g'] = noise['g']*np.sin(np.pi*z/Lz)
 θ['g'] = s['g']
 Υ['g'] = -θ['g']
+h1.change_scales(dealias)
+h1['g'] = (h0*np.expm1(θ)).evaluate()['g']
 # lnP = θ + Υ = 0 --> θ = -Υ
 # s = 1/γ θ - (γ-1)/γ Υ = 1/γ θ + (γ-1)/γ θ = θ
 
@@ -320,7 +322,8 @@ cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold
 cfl.add_velocity(u)
 
 ρ = np.exp(Υ0+Υ).evaluate()
-h = h0*np.exp(θ).evaluate()
+#h = h0*np.exp(θ).evaluate()
+h = h0 + h1
 KE = 0.5*ρ*u@u
 IE = cP*Ma2*h*(s+s0)
 Re = (ρ/scrR)*np.sqrt(u@u)
