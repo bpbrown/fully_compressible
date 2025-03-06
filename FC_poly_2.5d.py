@@ -125,36 +125,38 @@ else:
 
 Lx = float(args['--aspect'])*Lz
 
+dtype = np.float64
+
 dealias = 2
-c = de.CartesianCoordinates('x', 'y', 'z')
-d = de.Distributor(c, dtype=np.float64)
-xb = de.RealFourier(c.coords[0], size=nx, bounds=(0, Lx), dealias=dealias)
-zb = de.ChebyshevT(c.coords[2], size=nz, bounds=(0, Lz), dealias=dealias)
+coords = de.CartesianCoordinates('y', 'x', 'z', right_handed=False)
+dist = de.Distributor(coords, dtype=dtype)
+xb = de.RealFourier(coords['x'], size=nx, bounds=(0, Lx), dealias=dealias)
+zb = de.ChebyshevT(coords['z'],  size=nz, bounds=(0, Lz), dealias=dealias)
 b = (xb, zb)
-x = xb.local_grid(1)
-z = zb.local_grid(1)
+x = dist.local_grid(xb)
+z = dist.local_grid(zb)
 
 # Fields
-θ = d.Field(name='θ', bases=b)
-Υ = d.Field(name='Υ', bases=b)
-s = d.Field(name='s', bases=b)
-u = d.VectorField(c, name='u', bases=b)
+θ = dist.Field(name='θ', bases=b)
+Υ = dist.Field(name='Υ', bases=b)
+s = dist.Field(name='s', bases=b)
+u = dist.VectorField(coords, name='u', bases=b)
 
 # Taus
 zb1 = zb.clone_with(a=zb.a+1, b=zb.b+1)
 zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 lift1 = lambda A, n: de.Lift(A, zb1, n)
 lift = lambda A, n: de.Lift(A, zb2, n)
-τ_s1 = d.Field(name='τs1', bases=xb)
-τ_s2 = d.Field(name='τs2', bases=xb)
-τ_u1 = d.VectorField(c, name='τu1', bases=xb)
-τ_u2 = d.VectorField(c, name='τu2', bases=xb)
+τ_s1 = dist.Field(name='τs1', bases=xb)
+τ_s2 = dist.Field(name='τs2', bases=xb)
+τ_u1 = dist.VectorField(coords, name='τu1', bases=xb)
+τ_u2 = dist.VectorField(coords, name='τu2', bases=xb)
 
 # Parameters and operators
 ddt = lambda A: de.TimeDerivative(A)
 div = lambda A: de.Divergence(A, index=0)
-lap = lambda A: de.Laplacian(A, c)
-grad = lambda A: de.Gradient(A, c)
+lap = lambda A: de.Laplacian(A, coords)
+grad = lambda A: de.Gradient(A, coords)
 curl = lambda A: de.Curl(A)
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
@@ -163,9 +165,9 @@ integ = lambda A: de.Integrate(de.Integrate(A, 'x'), 'z')
 avg = lambda A: integ(A)/(Lx*Lz)
 x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
 
-ex, ey, ez = c.unit_vector_fields(d)
+ey, ex, ez = coords.unit_vector_fields(dist)
 
-h0 = d.Field(name='h0', bases=zb)
+h0 = dist.Field(name='h0', bases=zb)
 h0['g'] = h_bot+h_slope*z
 
 θ0 = np.log(h0).evaluate()
@@ -198,8 +200,6 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 
 
 # stress-free bcs
-grad_u = grad(u) + lift1(τ_u2,-1)*ez
-e_bc = grad_u + trans(grad_u)
 e = grad(u) + trans(grad(u))
 
 viscous_terms = div(e) - 2/3*grad(div(u))
@@ -241,18 +241,24 @@ logger.info("NCC expansions:")
 for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
+
 # Υ = ln(ρ), θ = ln(h)
-problem = de.IVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2])
+vars = [Υ, u, s, θ]
+taus = [τ_u1, τ_u2, τ_s1, τ_s2]
+τ_u = lift(τ_u1,-1) + lift(τ_u2,-2)
+τ_s = lift(τ_s1,-1) + lift(τ_s2,-2)
+
+problem = de.IVP(vars+taus)
 problem.add_equation((ρ0*(ddt(u)
                       + grad_h0*θ
                       + h0*grad(θ)
                       - h0*grad(s)
                       - h0*grad_s0*θ)
-                      - scrR*viscous_terms
-                      + lift(τ_u1,-1) + lift(τ_u2,-2),
+                      - scrR*(viscous_terms)
+                      + τ_u,
                       -ρ0_g*(u@grad(u))
                       -ρ0_grad_h0_g*(np.expm1(θ)-θ)
-                      -ρ0_h0_g*np.expm1(θ)*grad(θ) # these is the problem term
+                      -ρ0_h0_g*grad(np.expm1(θ)-θ)
                       +ρ0_h0_g*np.expm1(θ)*grad(s)
                       +ρ0_h0_grad_s0_g*(np.expm1(θ)-θ)
                       ))
@@ -260,7 +266,7 @@ problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + h0/scrR*lift1(τ_u2,-
                       -h0_g*(u@grad(Υ)) ))
 problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
                       - h0*scrP*(lap(θ) + 2*grad_θ0@grad(θ))
-                      + lift(τ_s1,-1) + lift(τ_s2,-2),
+                      + τ_s,
                       - ρ0_h0_g*(u@grad(s))
                       + h0_g*scrP*grad(θ)@grad(θ)
                       ))
@@ -268,30 +274,24 @@ problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
 problem.add_equation((θ - (γ-1)*Υ - γ*s, 0)) #EOS, cP absorbed into s.
 # boundary conditions
 problem.add_equation((θ(z=0), 0))
-if no_slip:
-    problem.add_equation((u(z=0), 0))
-else:
-    problem.add_equation((ez@u(z=0), 0))
-    problem.add_equation((ez@(ex@e_bc(z=0)), 0))
-    problem.add_equation((ez@(ey@e_bc(z=0)), 0))
-#    problem.add_equation((ez@(ex@e(z=0))+ex@(lift1(τ_u2,-1)(z=0)), 0))
-#    problem.add_equation((ez@(ey@e(z=0))+ey@(lift1(τ_u2,-1)(z=0)), 0))
 problem.add_equation((θ(z=Lz), 0))
 if no_slip:
+    problem.add_equation((u(z=0), 0))
     problem.add_equation((u(z=Lz), 0))
 else:
+    problem.add_equation((ez@u(z=0), 0))
+    problem.add_equation((ez@(ex@e(z=0)), 0))
+    problem.add_equation((ez@(ey@e(z=0)), 0))
     problem.add_equation((ez@u(z=Lz), 0))
-    problem.add_equation((ez@(ex@e_bc(z=Lz)), 0))
-    problem.add_equation((ez@(ey@e_bc(z=Lz)), 0))
-#    problem.add_equation((ez@(ex@e(z=Lz))+ex@(lift1(τ_u2,-1)(z=Lz)), 0))
-#    problem.add_equation((ez@(ey@e(z=Lz))+ey@(lift1(τ_u2,-1)(z=Lz)), 0))
+    problem.add_equation((ez@(ex@e(z=Lz)), 0))
+    problem.add_equation((ez@(ey@e(z=Lz)), 0))
 logger.info("Problem built")
 
 # initial conditions
 amp = 1e-4*Ma2
 
 zb, zt = zb.bounds
-noise = d.Field(name='noise', bases=b)
+noise = dist.Field(name='noise', bases=b)
 noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
@@ -312,7 +312,6 @@ if args['--safety']:
 
 solver = problem.build_solver(ts, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
-#solver.stop_sim_time =
 solver.stop_wall_time = run_time_wall
 
 Δt = max_Δt = float(args['--max_dt'])
@@ -345,15 +344,13 @@ slice_output.add_task(s0, name='s0(z)')
 slice_output.add_task(x_avg(s0+s), name='s(z)')
 
 
-traces = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=None)
-traces.add_task(avg(0.5*ρ*u@u), name='KE')
-traces.add_task(avg(IE), name='IE')
-traces.add_task(avg(Re), name='Re')
-traces.add_task(avg(ω**2), name='enstrophy')
-traces.add_task(x_avg(np.sqrt(τ_u1@τ_u1)), name='τ_u1')
-traces.add_task(x_avg(np.sqrt(τ_u2@τ_u2)), name='τ_u2')
-traces.add_task(x_avg(np.sqrt(τ_s1**2)), name='τ_s1')
-traces.add_task(x_avg(np.sqrt(τ_s2**2)), name='τ_s2')
+scalars = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=None)
+scalars.add_task(avg(0.5*ρ*u@u), name='KE')
+scalars.add_task(avg(IE), name='IE')
+scalars.add_task(avg(Re), name='Re')
+scalars.add_task(avg(ω**2), name='enstrophy')
+scalars.add_task(x_avg(np.sqrt(τ_u@τ_u)), name='τ_u')
+scalars.add_task(x_avg(np.sqrt(τ_s**2)), name='τ_s')
 
 report_cadence = 10
 good_solution = True
@@ -362,10 +359,8 @@ flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(Re, name='Re')
 flow.add_property(KE, name='KE')
 flow.add_property(IE, name='IE')
-flow.add_property(τ_u1, name='τ_u1')
-flow.add_property(τ_u2, name='τ_u2')
-flow.add_property(τ_s1, name='τ_s1')
-flow.add_property(τ_s2, name='τ_s2')
+flow.add_property(np.sqrt(τ_u@τ_u), name='|τ_u|')
+flow.add_property(np.sqrt(τ_s**2),  name='|τ_s|')
 
 KE_avg = 0
 while solver.proceed and good_solution:
@@ -376,13 +371,11 @@ while solver.proceed and good_solution:
         IE_avg = flow.grid_average('IE')
         Re_avg = flow.grid_average('Re')
         Re_max = flow.max('Re')
-        τu1_max = flow.max('τ_u1')
-        τu2_max = flow.max('τ_u2')
-        τs1_max = flow.max('τ_s1')
-        τs2_max = flow.max('τ_s2')
-        τ_max = np.max([τu1_max,τu2_max,τs1_max,τs2_max])
+        τu_max = flow.max('|τ_u|')
+        τs_max = flow.max('|τ_s|')
+        τ_max = np.max([τu_max,τs_max])
         log_string = 'Iteration: {:5d}, Time: {:8.3e} ({:.1e}), dt: {:5.1e}'.format(solver.iteration, solver.sim_time, solver.sim_time*scrR, Δt)
-        log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g} ({:.2g})'.format(KE_avg, IE_avg, Re_avg, Re_max)
+        log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g}'.format(KE_avg, IE_avg, Re_avg)
         log_string += ', τ: {:.2g}'.format(τ_max)
         logger.info(log_string)
     Δt = cfl.compute_timestep()
