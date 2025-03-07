@@ -19,7 +19,7 @@ Options:
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
-    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
+    --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=aspect*nz
 
     --run_time=<run_time>                Run time, in hours [default: 23.5]
     --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
@@ -139,10 +139,10 @@ x = dist.local_grid(xb)
 z = dist.local_grid(zb)
 
 # Fields
-θ = dist.Field(name='θ', bases=b)
-Υ = dist.Field(name='Υ', bases=b)
+θ1 = dist.Field(name='θ1', bases=b)
+Υ1 = dist.Field(name='Υ1', bases=b)
 h1 = dist.Field(name='h1', bases=b)
-s = dist.Field(name='s', bases=b)
+s1 = dist.Field(name='s1', bases=b)
 u = dist.VectorField(coords, name='u', bases=b)
 
 # Taus
@@ -213,8 +213,8 @@ Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 Ma2 = 1 #ε
 Pr = 1
 
-scrR = float(args['--mu'])
-scrP = scrR*Prandtl # Mihalas & Mihalas eq (28.3)
+scrR = float(args['--mu']) # scrR is 1/Re
+scrP = scrR/Prandtl # Mihalas & Mihalas eq (28.3), scrP is 1/Pe
 
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
@@ -242,36 +242,38 @@ if rank ==0:
 
 
 logger.info("NCC expansions:")
-for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0, 1/h0]:
+for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 
 # Υ = ln(ρ), θ = ln(h)
-vars = [Υ, u, s, h1]
+vars = [Υ1, u, s1, h1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2]
 τ_u = lift(τ_u1,-1) + lift(τ_u2,-2)
 τ_s = lift(τ_s1,-1) + lift(τ_s2,-2)
+τ_ρ = h0/scrR*lift1(τ_u2,-1)@ez
 
 problem = de.IVP(vars+taus)
 problem.add_equation((ρ0*(ddt(u)
                       + grad(h1)
-                      - h0*grad(s)
+                      - h0*grad(s1)
                       - h1*grad_s0)
-                      - scrR*(viscous_terms)
+                      - scrR*(viscous_terms) # takes ρ -> ρ0
                       + τ_u,
                       -ρ0_g*(u@grad(u))
-                      +ρ0_g*h1*grad(s)
+                      +ρ0_g*h1*grad(s1)
                       ))
-problem.add_equation((h0*(ddt(Υ) + div(u) + u@grad_Υ0) + h0/scrR*lift1(τ_u2,-1)@ez,
-                      -h0_g*(u@grad(Υ)) ))
-problem.add_equation((h0*ρ0*(ddt(s) + u@grad_s0)
-                      - h0*scrP*lap(h1)
+problem.add_equation((h0*(ddt(Υ1) + div(u) + u@grad_Υ0) + τ_ρ,
+                      -h0_g*(u@grad(Υ1)) ))
+problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
+                      - scrP*lap(h1) # takes ρ -> ρ0, h-> h0
                       + τ_s,
-                      - ρ0_h0_g*(u@grad(s))
+                      - ρ0_h0_g*(u@grad(s1))
+                      + scrP*(1/(1+h1*h0_inv_g)-1)*lap(h1)
                       ))
                       #+ Ek/Co2*0.5*h0_inv_g*Phi )) # figure this one out
 #EOS, cP absorbed into s.
-problem.add_equation((h0*((γ-1)*Υ + γ*s)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
+problem.add_equation((h0*((γ-1)*Υ1 + γ*s1)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
 # boundary conditions
 problem.add_equation((h1(z=0), 0))
 problem.add_equation((h1(z=Lz), 0))
@@ -295,11 +297,11 @@ noise = dist.Field(name='noise', bases=b)
 noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
 
-s['g'] = noise['g']*np.sin(np.pi*z/Lz)
-θ['g'] = s['g']
-Υ['g'] = -θ['g']
+s1['g'] = noise['g']*np.sin(np.pi*z/Lz)
+θ1['g'] = s1['g']
+Υ1['g'] = -θ1['g']
 h1.change_scales(dealias)
-h1['g'] = (h0*np.expm1(θ)).evaluate()['g']
+h1['g'] = (h0*np.expm1(θ1)).evaluate()['g']
 # lnP = θ + Υ = 0 --> θ = -Υ
 # s = 1/γ θ - (γ-1)/γ Υ = 1/γ θ + (γ-1)/γ θ = θ
 
@@ -321,39 +323,48 @@ cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold
                      max_change=1.5, min_change=0.5, max_dt=max_Δt)
 cfl.add_velocity(u)
 
-ρ = np.exp(Υ0+Υ).evaluate()
-#h = h0*np.exp(θ).evaluate()
+ρ = np.exp(Υ0+Υ1)
 h = h0 + h1
+s = s0 + s1
+T = h/cP
 KE = 0.5*ρ*u@u
-IE = cP*Ma2*h*(s+s0)
+IE = -cP*Ma2*h*(s1+s0)
 Re = (ρ/scrR)*np.sqrt(u@u)
+Ma = np.sqrt(u@u/(γ*T))
 ω = curl(u)
 κ = 1/scrP
 
 slice_dt = 0.5/np.sqrt(ε)
 
-slice_output = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
-slice_output.add_task(s+s0, name='s+s0')
-slice_output.add_task(s, name='s')
-slice_output.add_task(θ, name='θ')
-slice_output.add_task(ω@ey, name='vorticity')
-slice_output.add_task(ω**2, name='enstrophy')
-slice_output.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ(z)')
-slice_output.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
-slice_output.add_task(x_avg(u@ez*h), name='F_h(z)')
-slice_output.add_task(grad(s0), name='grad_s0')
-slice_output.add_task(x_avg(grad(s0+s)), name='grad_s')
-slice_output.add_task(s0, name='s0(z)')
-slice_output.add_task(x_avg(s0+s), name='s(z)')
+slices = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
+slices.add_task(s, name='s')
+slices.add_task(s-x_avg(s), name='s_fluc')
+slices.add_task(θ1, name='θ')
+slices.add_task(ω@ey, name='vorticity')
+slices.add_task(ω**2, name='enstrophy')
 
 
-scalars = solver.evaluator.add_file_handler(data_dir+'/traces', sim_dt=0.1, max_writes=None)
+averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
+averages.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ(z)')
+averages.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
+averages.add_task(x_avg(u@ez*h), name='F_h(z)')
+averages.add_task(grad(s0), name='grad_s0(z)')
+averages.add_task(x_avg(grad(s0+s1)), name='grad_s(z)')
+averages.add_task(s0, name='s0(z)')
+averages.add_task(x_avg(s0+s1), name='s(z)')
+averages.add_task(x_avg(ω**2), name='enstrophy(z)')
+averages.add_task(x_avg(Re), name='Re(z)')
+averages.add_task(x_avg(Ma), name='Ma(z)')
+
+scalars = solver.evaluator.add_file_handler(data_dir+'/scalars', sim_dt=0.1, max_writes=None)
 scalars.add_task(avg(0.5*ρ*u@u), name='KE')
 scalars.add_task(avg(IE), name='IE')
 scalars.add_task(avg(Re), name='Re')
+scalars.add_task(avg(Ma), name='Ma')
 scalars.add_task(avg(ω**2), name='enstrophy')
-scalars.add_task(x_avg(np.sqrt(τ_u@τ_u)), name='τ_u')
-scalars.add_task(x_avg(np.sqrt(τ_s**2)), name='τ_s')
+scalars.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
+scalars.add_task(np.sqrt(avg(τ_s**2)), name='τ_s')
+scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
 
 report_cadence = 10
 good_solution = True
@@ -362,6 +373,7 @@ flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
 flow.add_property(Re, name='Re')
 flow.add_property(KE, name='KE')
 flow.add_property(IE, name='IE')
+flow.add_property(Ma, name='Ma')
 flow.add_property(np.sqrt(τ_u@τ_u), name='|τ_u|')
 flow.add_property(np.sqrt(τ_s**2),  name='|τ_s|')
 
@@ -373,12 +385,13 @@ while solver.proceed and good_solution:
         KE_avg = flow.grid_average('KE')
         IE_avg = flow.grid_average('IE')
         Re_avg = flow.grid_average('Re')
+        Ma_avg = flow.grid_average('Ma')
         Re_max = flow.max('Re')
         τu_max = flow.max('|τ_u|')
         τs_max = flow.max('|τ_s|')
         τ_max = np.max([τu_max,τs_max])
         log_string = 'Iteration: {:5d}, Time: {:8.3e} ({:.1e}), dt: {:5.1e}'.format(solver.iteration, solver.sim_time, solver.sim_time*scrR, Δt)
-        log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.2g}'.format(KE_avg, IE_avg, Re_avg)
+        log_string += ', KE: {:.2g}, IE: {:.2g}, Re: {:.1g}, Ma: {:.1g}'.format(KE_avg, IE_avg, Re_avg, Ma_avg)
         log_string += ', τ: {:.2g}'.format(τ_max)
         logger.info(log_string)
     Δt = cfl.compute_timestep()
