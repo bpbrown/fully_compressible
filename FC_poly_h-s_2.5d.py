@@ -266,12 +266,12 @@ problem.add_equation((ρ0*(ddt(u)
 problem.add_equation((h0*(ddt(Υ1) + div(u) + u@grad_Υ0) + τ_ρ,
                       -h0_g*(u@grad(Υ1)) ))
 problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
-                      - scrP*lap(h1) # takes ρ -> ρ0, h-> h0
+                      - scrP*lap(h1) # takes ρ -> ρ0, h -> h0
                       + τ_s,
                       - ρ0_h0_g*(u@grad(s1))
-                      + scrP*(1/(1+h1*h0_inv_g)-1)*lap(h1)
+                      + scrP*(1/(1+h1*h0_inv_g)-1)*lap(h1) # takes ρ -> ρ0, accounts for h -> h0 LHS
+                      + scrR*h0_g/(h1+h0_g)*Phi
                       ))
-                      #+ Ek/Co2*0.5*h0_inv_g*Phi )) # figure this one out
 #EOS, cP absorbed into s.
 problem.add_equation((h0*((γ-1)*Υ1 + γ*s1)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
 # boundary conditions
