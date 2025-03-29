@@ -215,20 +215,22 @@ trace_e = trace(e)
 Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 
 Ma2 = 1 #ε
-Pr = 1
+Pr = 1 # (μ cP)/κ
 
-scrR = float(args['--mu']) # scrR is 1/Re
+scrR = float(args['--mu']) # scrR is 1/Re = (μ/ρ_c)/(u_c L)
 scrP = scrR/Prandtl # Mihalas & Mihalas eq (28.3), scrP is 1/Pe
 
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
 delta_s = s_bot-s_top
-# g = m+1
-# pre = g*(delta_s)*Lz**3
-# Ra_bot = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=0)).evaluate()['g']
-# Ra_mid = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
-# Ra_top = pre*(1/(μ*κ*cP)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
+g = m+1 # maybe right, maybe not
+μ = scrR
+κ = (μ*cP)/Pr
+pre = g*(delta_s)*Lz**3 # oof...
+Ra_bot = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=0)).evaluate()['g']
+Ra_mid = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
+Ra_top = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=Lz)).evaluate()['g']
 
 Υ_bot = Υ0(z=0).evaluate()['g']
 Υ_top = Υ0(z=Lz).evaluate()['g']
@@ -237,9 +239,9 @@ delta_s = s_bot-s_top
 θ_top = θ0(z=Lz).evaluate()['g']
 
 if rank ==0:
-    # logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0][0]))
-    # logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz/2, Ra_mid[0][0]))
-    # logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0][0]))
+    logger.info("Ra(z=0)   = {:.2g}".format(Ra_bot[0,0,0]))
+    logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz/2, Ra_mid[0,0,0]))
+    logger.info("Ra(z={:.1f}) = {:.2g}".format(Lz, Ra_top[0,0,0]))
     logger.info("Δs = {:.2g} ({:.2g} to {:.2g})".format(s_bot[0,0,0]-s_top[0,0,0],s_bot[0,0,0],s_top[0,0,0]))
     logger.info("Δθ = {:.2g} ({:.2g} to {:.2g})".format(θ_bot[0,0,0]-θ_top[0,0,0],θ_bot[0,0,0],θ_top[0,0,0]))
     logger.info("ΔΥ = {:.2g} ({:.2g} to {:.2g})".format(Υ_bot[0,0,0]-Υ_top[0,0,0],Υ_bot[0,0,0],Υ_top[0,0,0]))
@@ -335,14 +337,15 @@ h = h0 + h1
 s = s0 + s1 # actually s/cP
 T = h/cP
 KE = 0.5*ρ*u@u
-IE = Ma2*h
-PE = -cP*Ma2*h*s
+IE = Ma2*ρ*h
+PE = -cP*Ma2*ρ*h*s
 Re = (ρ/scrR)*np.sqrt(u@u)
 Ma = np.sqrt(u@u/(γ*T))
 ω = curl(u)
-κ = 1/scrP
+
 
 slice_dt = 0.5/np.sqrt(ε)
+scalar_dt = slice_dt/5
 
 slices = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
 slices.add_task(s, name='s')
@@ -364,7 +367,7 @@ averages.add_task(x_avg(ω**2), name='enstrophy(z)')
 averages.add_task(x_avg(Re), name='Re(z)')
 averages.add_task(x_avg(Ma), name='Ma(z)')
 
-scalars = solver.evaluator.add_file_handler(data_dir+'/scalars', sim_dt=0.1, max_writes=None)
+scalars = solver.evaluator.add_file_handler(data_dir+'/scalars', sim_dt=scalar_dt, max_writes=None)
 scalars.add_task(avg(KE), name='KE')
 scalars.add_task(avg(IE), name='IE')
 scalars.add_task(avg(PE), name='PE')
