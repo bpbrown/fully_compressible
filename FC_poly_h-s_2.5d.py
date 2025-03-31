@@ -15,7 +15,7 @@ Options:
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
     --safety=<safety>                    CFL safety factor
-    --SBDF2                              Use SBDF2
+    --timestepper=<ts>                   Timestepper to use [default: RK443]
     --max_dt=<max_dt>                    Largest timestep; also sets initial dt [default: 1]
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
@@ -30,6 +30,7 @@ Options:
     --whole_sun
 
     --no-slip                            Apply no-slip boundary conditions
+    --mixed                              Apply mixed no-slip (bottom)/stress-free (top) boundary conditions
 
     --label=<label>                      Additional label for run output directory
 """
@@ -59,6 +60,7 @@ dlog.setLevel(logging.WARNING)
 ncc_cutoff = float(args['--ncc_cutoff'])
 
 no_slip = args['--no-slip']
+mixed = args['--mixed']
 
 #Resolution
 nz = int(args['--nz'])
@@ -114,24 +116,31 @@ from dedalus.extras import flow_tools
 logger.info(args)
 logger.info("saving data in: {}".format(data_dir))
 
+reference_point='top'
 if args['--whole_sun']:
     theta = 10
     h_bot = theta+1
     h_slope = -theta
     Lz = 1
 else:
-    # this assumes h_bot=1, grad_φ = (γ-1)/γ (or L=Hρ)
-    h_bot = 1
-    h_slope = -1/(1+m)
-    grad_φ = (γ-1)/γ
     n_h = float(args['--n_h'])
-    Lz = -1/h_slope*(1-np.exp(-n_h))
+    h_slope = -1
+    if reference_point == "top":
+        h_bot = np.exp(n_h)
+        h_top = 1
+    elif reference_point == "bot":
+        h_bot = 1
+        h_top = np.exp(-n_h)
+    grad_φ = (1+m)*(γ-1)/γ
+    Lz = -1/h_slope*(h_bot-h_top)
+
+    logger.info(f'adopting: h_top = {h_top:.2g} h_bot = {h_bot:.2g}, h_slope = {h_slope:.2g}, Lz = {Lz:.2g}')
 
 Lx = float(args['--aspect'])*Lz
 
 dtype = np.float64
 
-dealias = 2
+dealias = 3/2
 coords = de.CartesianCoordinates('y', 'x', 'z', right_handed=False)
 dist = de.Distributor(coords, mesh=[1,nproc], dtype=dtype)
 xb = de.RealFourier(coords['x'], size=nx, bounds=(0, Lx), dealias=dealias)
@@ -153,6 +162,7 @@ zb2 = zb.clone_with(a=zb.a+2, b=zb.b+2)
 lift1 = lambda A, n: de.Lift(A, zb1, n)
 lift = lambda A, n: de.Lift(A, zb2, n)
 #lift = lambda A, n: de.Lift(A, zb, n)
+τ_c0 = dist.Field(name='τc0')
 τ_c1 = dist.Field(name='τc1', bases=xb)
 τ_s1 = dist.Field(name='τs1', bases=xb)
 τ_s2 = dist.Field(name='τs2', bases=xb)
@@ -257,7 +267,7 @@ vars = [Υ1, u, s1, h1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2] #, τ_c1]
 τ_u = lift(τ_u1,-1) + lift(τ_u2,-2)
 τ_s = lift(τ_s1,-1) + lift(τ_s2,-2)
-#τ_ρ = lift(τ_c1, -1)
+#τ_ρ = τ_c0 #+ lift(τ_c1, -1)
 τ_ρ = h0/scrR*lift1(τ_u2,-1)@ez
 
 problem = de.IVP(vars+taus)
@@ -285,8 +295,15 @@ problem.add_equation((h0*((γ-1)*Υ1 + γ*s1)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1)
 problem.add_equation((h1(z=0), 0))
 problem.add_equation((h1(z=Lz), 0))
 if no_slip:
+    logger.info("applying no-slip boundary conditions")
     problem.add_equation((u(z=0), 0))
     problem.add_equation((u(z=Lz), 0))
+elif mixed:
+    logger.info("applying mixed no-slip (bottom) and stress-free (top) boundar conditions")
+    problem.add_equation((u(z=0), 0))
+    problem.add_equation((ez@u(z=Lz), 0))
+    problem.add_equation((ez@(ex@e(z=Lz)), 0))
+    problem.add_equation((ez@(ey@e(z=Lz)), 0))
 else:
     problem.add_equation((ez@u(z=0), 0))
     problem.add_equation((ez@(ex@e(z=0)), 0))
@@ -295,12 +312,12 @@ else:
     problem.add_equation((ez@(ex@e(z=Lz)), 0))
     problem.add_equation((ez@(ey@e(z=Lz)), 0))
 #problem.add_equation((integ(ez@τ_u2), 0))
+#problem.add_equation((integ(τ_u2), 0))
 logger.info("Problem built")
 
 # initial conditions
 amp = 1e-4*Ma2
 
-zb, zt = zb.bounds
 noise = dist.Field(name='noise', bases=b)
 noise.fill_random('g', seed=42, distribution='normal', scale=amp) # Random noise
 noise.low_pass_filter(scales=0.25)
@@ -313,14 +330,20 @@ h1['g'] = (h0*np.expm1(θ1)).evaluate()['g']
 # lnP = θ + Υ = 0 --> θ = -Υ
 # s = 1/γ θ - (γ-1)/γ Υ = 1/γ θ + (γ-1)/γ θ = θ
 
-if args['--SBDF2']:
+ts_name = args['--timestepper']
+if ts_name == 'SBDF2':
     ts = de.SBDF2
     cfl_safety_factor = 0.1
+elif ts_name == 'RK222':
+    ts = de.RK222
+    cfl_safety_factor = 0.2
 else:
     ts = de.RK443
     cfl_safety_factor = 0.4
 if args['--safety']:
     cfl_safety_factor = float(args['--safety'])
+
+logger.info(f'using timestepper {ts_name} ({ts}) with safety factor {cfl_safety_factor:.2g}')
 
 solver = problem.build_solver(ts, ncc_cutoff=ncc_cutoff)
 solver.stop_iteration = run_time_iter
@@ -332,13 +355,18 @@ cfl = flow_tools.CFL(solver, Δt, safety=cfl_safety_factor, cadence=1, threshold
                      max_change=1.5, min_change=0.5, max_dt=max_Δt)
 cfl.add_velocity(u)
 
+z_grid = dist.Field(name='z_grid', bases=zb)
+z_grid['g'] = z
+
 ρ = np.exp(Υ0+Υ1)
 h = h0 + h1
 s = s0 + s1 # actually s/cP
 T = h/cP
 KE = 0.5*ρ*u@u
-IE = Ma2*ρ*h
-PE = -cP*Ma2*ρ*h*s
+IE = 1/γ*ρ*h
+φ = grad_φ*z_grid
+PE = ρ*φ
+#PE = -cP*Ma2*ρ*h*s
 Re = (ρ/scrR)*np.sqrt(u@u)
 Ma = np.sqrt(u@u/(γ*T))
 ω = curl(u)
@@ -356,9 +384,9 @@ slices.add_task(ω**2, name='enstrophy')
 
 
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
-averages.add_task(x_avg(-κ*grad(h)@ez/cP), name='F_κ(z)')
+averages.add_task(x_avg(-κ*grad(h)@ez), name='F_κ(z)')
 averages.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
-averages.add_task(x_avg(u@ez*h), name='F_h(z)')
+averages.add_task(x_avg(u@ez*ρ*h), name='F_h(z)')
 averages.add_task(grad(s0), name='grad_s0(z)')
 averages.add_task(x_avg(grad(s0+s1)), name='grad_s(z)')
 averages.add_task(s0, name='s0(z)')
@@ -378,7 +406,7 @@ scalars.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 scalars.add_task(np.sqrt(avg(τ_s**2)), name='τ_s')
 scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
 
-report_cadence = 10
+report_cadence = 100
 good_solution = True
 
 flow = flow_tools.GlobalFlowProperty(solver, cadence=report_cadence)
