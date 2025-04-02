@@ -76,7 +76,7 @@ def main(filename, start, count, tasks, output):
                 if title is not None:
                     ax_cb.text(0.5, 1.75, title, horizontalalignment='left', verticalalignment='center', transform=ax_cb.transAxes)
                 if time is not None:
-                    ax.text(0.95, -0.1, "t = {:.0f}".format(time), horizontalalignment='left', verticalalignment='center',transform=ax.transAxes)
+                    ax.text(1.01, 0, "t = {:.0f}".format(time), horizontalalignment='left', verticalalignment='baseline',transform=ax.transAxes)
                 savename = savename_func(f['scales/write_number'][k])
                 savepath = output.joinpath(savename)
                 fig.savefig(str(savepath), dpi=dpi)

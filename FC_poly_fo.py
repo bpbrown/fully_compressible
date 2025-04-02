@@ -277,8 +277,6 @@ else:
     problem.add_equation((ez@u(z=0), 0))
     problem.add_equation((ez@(ex@e(z=0)), 0))
     problem.add_equation((ez@(ey@e(z=0)), 0))
-#    problem.add_equation((ez@(ex@e(z=0))+ex@(lift1(τ_u2,-1)(z=0)), 0))
-#    problem.add_equation((ez@(ey@e(z=0))+ey@(lift1(τ_u2,-1)(z=0)), 0))
 problem.add_equation((θ(z=Lz), 0))
 if no_slip:
     problem.add_equation((u(z=Lz), 0))
@@ -286,8 +284,6 @@ else:
     problem.add_equation((ez@u(z=Lz), 0))
     problem.add_equation((ez@(ex@e(z=Lz)), 0))
     problem.add_equation((ez@(ey@e(z=Lz)), 0))
-#    problem.add_equation((ez@(ex@e(z=Lz))+ex@(lift1(τ_u2,-1)(z=Lz)), 0))
-#    problem.add_equation((ez@(ey@e(z=Lz))+ey@(lift1(τ_u2,-1)(z=Lz)), 0))
 logger.info("Problem built")
 
 # initial conditions

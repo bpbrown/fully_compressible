@@ -217,11 +217,11 @@ ddt = lambda A: omega*A
 
 # Υ = ln(ρ), θ = ln(h)
 problem = de.EVP([Υ, u, s, θ, τ_u1, τ_u2, τ_s1, τ_s2], eigenvalue=omega)
-problem.add_equation((ρ0*ddt(u)
-                      + ρ0*grad_h0*θ
-                      + ρ0*h0*grad(θ)
-                      - ρ0*h0*grad(s)
-                      - ρ0*h0*grad_s0*θ
+problem.add_equation((ρ0*(ddt(u)
+                      + grad_h0*θ
+                      + h0*grad(θ)
+                      - h0*grad(s)
+                      - h0*grad_s0*θ)
                       - scrR*viscous_terms
                       + lift(τ_u1,-1) + lift(τ_u2,-2),
                       0 ))
@@ -371,6 +371,7 @@ else:
     logger.info('σ = {:}, {:}i'.format(crit_σ.real, crit_σ.imag))
 
     ax.scatter(crit_k, crit_σ.real, marker='s', label=r'$\mathcal{R}$'+': {:.3g}'.format(crit_scrR))
+    ax.set_title(r'crit $\mathcal{R}$ = '+'{:.6g}'.format(crit_scrR)+r' $k$ ='+'{:.3g}'.format(crit_k))
 
     ax.legend()
     ax.set_xscale('log')

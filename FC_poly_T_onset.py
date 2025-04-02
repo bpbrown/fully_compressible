@@ -356,7 +356,7 @@ else:
     logger.info('σ = {:}, {:}i'.format(crit_σ.real, crit_σ.imag))
 
     ax.scatter(crit_k, crit_σ.real, marker='s', label=r'$\mathcal{R}$'+': {:.3g}'.format(crit_scrR))
-
+    ax.set_title(r'crit $\mathcal{R}$ = '+'{:.6g}'.format(crit_scrR)+r' $k$ ='+'{:.3g}'.format(crit_k))
     ax.legend()
     ax.set_xscale('log')
     fig_filename = 'critical_curve'
