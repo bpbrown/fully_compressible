@@ -113,11 +113,10 @@ ax.legend(handles,labels)
 fig.savefig('{:s}/fluid_properties_with_depth.png'.format(str(output_path)), dpi=300)
 
 
-
 F_h = time_avg(data['F_h(z)'])
 F_κ = time_avg(data['F_κ(z)'])
 F_KE = time_avg(data['F_KE(z)'])
-#F_PE = time_avg(data['F_PE(z)'])
+F_PE = time_avg(data['F_PE(z)'])
 # Q_source = time_avg(data['Q_source(z)'])
 Q_source = 0
 # #F_μ_avg = time_avg(data['<Fμr>'])
@@ -137,16 +136,18 @@ norm = 1
 L_h = F_h*norm
 L_κ = F_κ*norm
 L_KE = F_KE*norm
-L_PE = np.zeros_like(L_h) #F_PE*norm
+L_PE = F_PE*norm
 #L_μ = 4*np.pi*r**2*theta_avg(F_μ_avg)*norm
 L_S = L_S*norm
 
+L_tot = L_h + L_KE + L_PE + L_κ
+
 fig, ax = plt.subplots(figsize=(4.5,4/1.5))
 fig.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
-ax.plot(z, L_h + L_KE + L_PE + L_κ, color='black', label=r'$L_\mathrm{tot}$', linewidth=3)
+ax.plot(z, L_tot, color='black', label=r'$L_\mathrm{tot}$', linewidth=3)
 ax.plot(z, L_h, label=r'$L_\mathrm{h}$')
 ax.plot(z, L_KE, label=r'$L_\mathrm{KE}$')
-#ax.plot(z, L_PE, label=r'$L_\mathrm{PE}$')
+ax.plot(z, L_PE, label=r'$L_\mathrm{PE}$')
 ax.plot(z, L_κ, label=r'$L_\kappa$')
 #ax.plot(z, L_S, label=r'$L_\mathcal{S}$')
 #ax.axhline(y=0, linestyle='dashed', color='darkgrey', zorder=0)
@@ -163,7 +164,7 @@ fig.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
 ax.plot(z, L_h + L_KE + L_PE + L_κ_fluc, color='black', label=r'$L_\mathrm{tot}$', linewidth=3)
 ax.plot(z, L_h, label=r'$L_\mathrm{h}$')
 ax.plot(z, L_KE, label=r'$L_\mathrm{KE}$')
-#ax.plot(z, L_PE, label=r'$L_\mathrm{PE}$')
+ax.plot(z, L_PE, label=r'$L_\mathrm{PE}$')
 ax.plot(z, L_κ_fluc, label=r'$L_\kappa$')
 #ax.plot(z, L_S, label=r'$L_\mathcal{S}$')
 #ax.axhline(y=0, linestyle='dashed', color='darkgrey', zorder=0)
@@ -171,4 +172,4 @@ ax.plot(z, L_κ_fluc, label=r'$L_\kappa$')
 ax.legend()
 ax.set_ylabel(r'$L/L_{\mathcal{S}(z=Lz)}$')
 ax.set_xlabel(r'$z$')
-fig.savefig('{:s}/flux_balance.png'.format(str(output_path)), dpi=300)
+fig.savefig('{:s}/flux_balance_fluc.png'.format(str(output_path)), dpi=300)

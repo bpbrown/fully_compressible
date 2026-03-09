@@ -393,7 +393,7 @@ slices.add_task(ω**2, name='enstrophy')
 
 
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
-averages.add_task(x_avg(-κ*grad(h)@ez), name='F_κ(z)')
+averages.add_task(x_avg(-κ*grad(T)@ez), name='F_κ(z)')
 averages.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
 averages.add_task(x_avg(u@ez*ρ*h), name='F_h(z)')
 averages.add_task(x_avg(u@ez*ρ*φ), name='F_PE(z)')

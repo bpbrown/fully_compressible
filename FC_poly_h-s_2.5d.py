@@ -299,7 +299,7 @@ if no_slip:
     problem.add_equation((u(z=0), 0))
     problem.add_equation((u(z=Lz), 0))
 elif mixed:
-    logger.info("applying mixed no-slip (bottom) and stress-free (top) boundar conditions")
+    logger.info("applying mixed no-slip (bottom) and stress-free (top) boundary conditions")
     problem.add_equation((u(z=0), 0))
     problem.add_equation((ez@u(z=Lz), 0))
     problem.add_equation((ez@(ex@e(z=Lz)), 0))
