@@ -282,17 +282,18 @@ problem.add_equation((ρ0*(ddt(u)
                       - h1*grad_s0)
                       - μ*(viscous_terms) # takes ρ -> ρ0
                       + τ_u,
-                      -ρ0_g*(u@grad(u))
-                      +ρ0_g*(h1*grad(s1))
+                      - ρ0_g*(u@grad(u))
+                      + ρ0_g*(h1*grad(s1))
+                      + μ*np.expm1(-Υ1)*(viscous_terms) # accounts for LHS ρ -> ρ0
                       ))
 problem.add_equation((h0*(ddt(Υ1) + trace(grad_u) + u@grad_Υ0),
-                      -h0_g*(u@grad(Υ1)) ))
+                      - h0_g*(u@grad(Υ1)) ))
 problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
                       - κ*div(grad_h) # takes ρ -> ρ0, h -> h0
                       + τ_s,
                       - ρ0_h0_g*(u@grad(s1))
-                      + κ*(1/(1+h1*h0_inv_g)-1)*lap(h1) # takes ρ -> ρ0, accounts for h -> h0 LHS
-                      + μ*h0_g/(h1+h0_g)*Phi
+                      + κ*np.expm1(-Υ1)*(h0_g/(h0_g+h1)-1)*lap(h1) # accounts for h -> h0, ρ -> ρ0 LHS
+                      + μ*np.exp(-Υ1)*h0_g/(h1+h0_g)*Phi # takes full ρ
                       ))
 #EOS, cP absorbed into s.
 problem.add_equation((h0*((γ-1)*Υ1 + γ*s1)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
@@ -384,7 +385,7 @@ slices.add_task(θ1, name='θ')
 slices.add_task(ω@ey, name='vorticity')
 slices.add_task(ω**2, name='enstrophy')
 
-f_ρ = (ρ/ρ0)
+f_ρ = (ρ0/ρ)
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
 averages.add_task(x_avg(f_ρ), name='f_ρ(z)')
 averages.add_task(x_avg(-f_ρ*κ*grad(T)@ez), name='F_κ(z)')
@@ -450,5 +451,6 @@ if not good_solution:
     logger.info("KE = {}".format(KE_avg))
     logger.info("τu = {}".format((τu_max,τs_max)))
 
+logger.info("data in: {}".format(data_dir))
 solver.log_stats()
 logger.debug("mode-stages/DOF = {}".format(solver.total_modes/(nx*nz)))
