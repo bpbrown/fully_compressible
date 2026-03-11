@@ -222,14 +222,11 @@ grad_u = grad(u)  + ez*lift1(τ_u2,-1)
 
 
 # stress-free bcs
-e = grad_u + trans(grad_u)
+Eij = 0.5*(grad_u + trans(grad_u))
 
-viscous_terms = div(e) - 2/3*grad(trace(grad_u))
+viscous_terms = 2*div(Eij) - 2/3*grad(trace(Eij))
 
-visc_tau = div(ez*lift1(τ_u2,-1)+trans(ez*lift1(τ_u2,-1))) - 2/3*grad(trace(ez*lift1(τ_u2,-1)))
-
-trace_e = trace(e)
-Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
+Phi = 2*(trace(Eij@Eij) - 1/3*(trace(Eij)*trace(Eij)))
 
 Ma2 = 1 #ε
 Pr = 1 # (μ cP)/κ
@@ -270,33 +267,32 @@ for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
 
 # Υ = ln(ρ), θ = ln(h)
 vars = [Υ1, u, s1, h1]
-taus = [τ_u1, τ_u2, τ_s1, τ_s2] #, τ_c1]
-τ_u1 = lift1(τ_u1,-1)
-τ_s1 = lift1(τ_s1,-1)
-#τ_ρ = τ_c0 #+ lift(τ_c1, -1)
-τ_ρ = dist.Field(name='τρ', bases=b) #h0/scrR*lift1(τ_u2,-1)@ez
+taus = [τ_u1, τ_u2, τ_s1, τ_s2]
+τ_u = lift1(τ_u1,-1)
+τ_s = lift1(τ_s1,-1)
+τ_ρ = dist.Field(name='τρ', bases=b)
 
-τ_u = τ_u1 + visc_tau + ez*lift1(τ_s2,-1)
-τ_s = τ_s1 + div(ez*lift1(τ_s2,-1))
+#τ_u = τ_u1 + visc_tau + ez*lift1(τ_s2,-1)
+#τ_s = τ_s1 + div(ez*lift1(τ_s2,-1))
 
 problem = de.IVP(vars+taus)
 problem.add_equation((ρ0*(ddt(u)
                       + grad_h
                       - h0*grad(s1)
                       - h1*grad_s0)
-                      - scrR*(viscous_terms) # takes ρ -> ρ0
-                      + τ_u1,
+                      - μ*(viscous_terms) # takes ρ -> ρ0
+                      + τ_u,
                       -ρ0_g*(u@grad(u))
-                      +ρ0_g*h1*grad(s1)
+                      +ρ0_g*(h1*grad(s1))
                       ))
 problem.add_equation((h0*(ddt(Υ1) + trace(grad_u) + u@grad_Υ0),
                       -h0_g*(u@grad(Υ1)) ))
 problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
-                      - scrP*div(grad_h) # takes ρ -> ρ0, h -> h0
-                      + τ_s1,
+                      - κ*div(grad_h) # takes ρ -> ρ0, h -> h0
+                      + τ_s,
                       - ρ0_h0_g*(u@grad(s1))
-                      + scrP*(1/(1+h1*h0_inv_g)-1)*lap(h1) # takes ρ -> ρ0, accounts for h -> h0 LHS
-                      + scrR*h0_g/(h1+h0_g)*Phi
+                      + κ*(1/(1+h1*h0_inv_g)-1)*lap(h1) # takes ρ -> ρ0, accounts for h -> h0 LHS
+                      + μ*h0_g/(h1+h0_g)*Phi
                       ))
 #EOS, cP absorbed into s.
 problem.add_equation((h0*((γ-1)*Υ1 + γ*s1)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
@@ -311,17 +307,15 @@ elif mixed:
     logger.info("applying mixed no-slip (bottom) and stress-free (top) boundary conditions")
     problem.add_equation((u(z=0), 0))
     problem.add_equation((ez@u(z=Lz), 0))
-    problem.add_equation((ez@(ex@e(z=Lz)), 0))
-    problem.add_equation((ez@(ey@e(z=Lz)), 0))
+    problem.add_equation((ez@(ex@Eij(z=Lz)), 0))
+    problem.add_equation((ez@(ey@Eij(z=Lz)), 0))
 else:
     problem.add_equation((ez@u(z=0), 0))
-    problem.add_equation((ez@(ex@e(z=0)), 0))
-    problem.add_equation((ez@(ey@e(z=0)), 0))
+    problem.add_equation((ez@(ex@Eij(z=0)), 0))
+    problem.add_equation((ez@(ey@Eij(z=0)), 0))
     problem.add_equation((ez@u(z=Lz), 0))
-    problem.add_equation((ez@(ex@e(z=Lz)), 0))
-    problem.add_equation((ez@(ey@e(z=Lz)), 0))
-#problem.add_equation((integ(ez@τ_u2), 0))
-#problem.add_equation((integ(τ_u2), 0))
+    problem.add_equation((ez@(ex@Eij(z=Lz)), 0))
+    problem.add_equation((ez@(ey@Eij(z=Lz)), 0))
 logger.info("Problem built")
 
 # initial conditions
@@ -375,8 +369,7 @@ KE = 0.5*ρ*u@u
 IE = 1/γ*ρ*h
 φ = grad_φ*z_grid
 PE = ρ*φ
-#PE = -cP*Ma2*ρ*h*s
-Re = (ρ/scrR)*np.sqrt(u@u)
+Re = (ρ/μ)*np.sqrt(u@u)
 Ma = np.sqrt(u@u/(γ*T))
 ω = curl(u)
 
@@ -391,12 +384,14 @@ slices.add_task(θ1, name='θ')
 slices.add_task(ω@ey, name='vorticity')
 slices.add_task(ω**2, name='enstrophy')
 
-
+f_ρ = (ρ/ρ0)
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
-averages.add_task(x_avg(-κ*grad(T)@ez), name='F_κ(z)')
+averages.add_task(x_avg(f_ρ), name='f_ρ(z)')
+averages.add_task(x_avg(-f_ρ*κ*grad(T)@ez), name='F_κ(z)')
 averages.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
 averages.add_task(x_avg(u@ez*ρ*h), name='F_h(z)')
 averages.add_task(x_avg(u@ez*ρ*φ), name='F_PE(z)')
+averages.add_task(x_avg(-f_ρ*μ*2*(u@Eij-u*1/3*div(u))@ez), name='F_μ(z)')
 averages.add_task(grad(s0), name='grad_s0(z)')
 averages.add_task(x_avg(grad(s0+s1)), name='grad_s(z)')
 averages.add_task(s0, name='s0(z)')
