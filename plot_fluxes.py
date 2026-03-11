@@ -1,11 +1,10 @@
 """
-Plot radial profile outputs from joint analysis file.
+Plot averaged quantities from joint analysis file.
 
 Usage:
-    plot_slices.py <files>... [options]
+    plot_fluxes.py <files>... [options]
 
 Options:
-    --MESA               Overlay MESA L_MLT
     --output=<output>    Output directory; if blank a guess based on likely case name will be made
 
     --fraction=<frac>    Fraction of time to average over, from end of simulation [default: 0.1]
@@ -100,11 +99,15 @@ fig_s.savefig('{:s}/thermal_profile.png'.format(str(output_path)), dpi=300)
 Ma_avg = time_avg(data['Ma(z)'])
 Re_avg = time_avg(data['Re(z)'])
 
-fig, ax = plt.subplots(figsize=(6,6/1.62))
-fig.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
+fig, ax = plt.subplots(figsize=(4.5,4/1.5))
+fig.subplots_adjust(top=0.9, right=0.85, bottom=0.2, left=0.15)
 ax.plot(z, Re_avg, linewidth=2, label='Re')
 ax_r = ax.twinx()
 ax_r.plot(z, Ma_avg, linewidth=2, label='Ma', linestyle='dotted', color='tab:red')
+ax.set_xlabel(r'$z$')
+ax.set_ylabel(r'$\mathrm{Re}$')
+ax_r.set_ylabel(r'$\mathrm{Ma}$')
+
 handles_l, labels_l = ax.get_legend_handles_labels()
 handles_r, labels_r = ax_r.get_legend_handles_labels()
 handles = handles_l + handles_r
@@ -112,64 +115,23 @@ labels = labels_l + labels_r
 ax.legend(handles,labels)
 fig.savefig('{:s}/fluid_properties_with_depth.png'.format(str(output_path)), dpi=300)
 
-
 F_h = time_avg(data['F_h(z)'])
 F_κ = time_avg(data['F_κ(z)'])
 F_KE = time_avg(data['F_KE(z)'])
 F_PE = time_avg(data['F_PE(z)'])
-# Q_source = time_avg(data['Q_source(z)'])
-Q_source = 0
-# #F_μ_avg = time_avg(data['<Fμr>'])
-#
-# fig_Q, ax_Q = plt.subplots(figsize=(4.5,4/1.5))
-# fig_Q.subplots_adjust(top=0.9, right=0.8, bottom=0.2, left=0.2)
-# ax_Q.plot(z, Q_source)
-# ax_Q.set_ylabel(r'$\mathcal{S}(z)$')
-# ax_Q.set_xlabel(r'$z$')
-# fig_Q.savefig('{:s}/source_function.pdf'.format(str(output_path)))
+F_μ = time_avg(data['F_μ(z)'])
 
-# L_S = sci.cumtrapz(Q_source, x=z, initial=0)
-# norm = 1/L_S[-1]
-L_S = np.zeros_like(F_h)
-norm = 1
-
-L_h = F_h*norm
-L_κ = F_κ*norm
-L_KE = F_KE*norm
-L_PE = F_PE*norm
-#L_μ = 4*np.pi*r**2*theta_avg(F_μ_avg)*norm
-L_S = L_S*norm
-
-L_tot = L_h + L_KE + L_PE + L_κ
+F_tot = F_h + F_κ + F_μ + F_KE + F_PE
 
 fig, ax = plt.subplots(figsize=(4.5,4/1.5))
 fig.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
-ax.plot(z, L_tot, color='black', label=r'$L_\mathrm{tot}$', linewidth=3)
-ax.plot(z, L_h, label=r'$L_\mathrm{h}$')
-ax.plot(z, L_KE, label=r'$L_\mathrm{KE}$')
-ax.plot(z, L_PE, label=r'$L_\mathrm{PE}$')
-ax.plot(z, L_κ, label=r'$L_\kappa$')
-#ax.plot(z, L_S, label=r'$L_\mathcal{S}$')
-#ax.axhline(y=0, linestyle='dashed', color='darkgrey', zorder=0)
-#ax.plot(r, L_μ, label=r'$L_\mu$')
+ax.plot(z, F_tot, color='black', label=r'$F_\mathrm{tot}$', linewidth=3)
+ax.plot(z, F_h, label=r'$F_\mathrm{h}$')
+ax.plot(z, F_KE, label=r'$F_\mathrm{KE}$')
+ax.plot(z, F_PE, label=r'$F_\mathrm{PE}$')
+ax.plot(z, F_κ, label=r'$F_\kappa$')
+ax.plot(z, F_μ, label=r'$F_\mu$')
 ax.legend()
-ax.set_ylabel(r'$L/L_{\mathcal{S}(z=Lz)}$')
+ax.set_ylabel(r'Flux')
 ax.set_xlabel(r'$z$')
 fig.savefig('{:s}/flux_balance.png'.format(str(output_path)), dpi=300)
-
-L_κ_fluc = L_κ - L_κ[-1]
-
-fig, ax = plt.subplots(figsize=(4.5,4/1.5))
-fig.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
-ax.plot(z, L_h + L_KE + L_PE + L_κ_fluc, color='black', label=r'$L_\mathrm{tot}$', linewidth=3)
-ax.plot(z, L_h, label=r'$L_\mathrm{h}$')
-ax.plot(z, L_KE, label=r'$L_\mathrm{KE}$')
-ax.plot(z, L_PE, label=r'$L_\mathrm{PE}$')
-ax.plot(z, L_κ_fluc, label=r'$L_\kappa$')
-#ax.plot(z, L_S, label=r'$L_\mathcal{S}$')
-#ax.axhline(y=0, linestyle='dashed', color='darkgrey', zorder=0)
-#ax.plot(r, L_μ, label=r'$L_\mu$')
-ax.legend()
-ax.set_ylabel(r'$L/L_{\mathcal{S}(z=Lz)}$')
-ax.set_xlabel(r'$z$')
-fig.savefig('{:s}/flux_balance_fluc.png'.format(str(output_path)), dpi=300)
