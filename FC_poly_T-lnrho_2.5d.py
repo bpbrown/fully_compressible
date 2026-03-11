@@ -464,5 +464,6 @@ if not good_solution:
     logger.info("KE = {}".format(KE_avg))
     logger.info("τu = {}".format((τu_max,τs_max)))
 
+logger.info("data in: {}".format(data_dir))
 solver.log_stats()
 logger.debug("mode-stages/DOF = {}".format(solver.total_modes/(nx*nz)))
