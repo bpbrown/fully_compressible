@@ -217,10 +217,17 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 #     θ0_RHS['g'] = θ0['g']
 
 
-# stress-free bcs
-e = grad(u) + trans(grad(u))
+grad_h = grad(h1) + ez*lift1(τ_s2,-1)
+grad_u = grad(u)  + ez*lift1(τ_u2,-1)
 
-viscous_terms = div(e) - 2/3*grad(div(u))
+
+# stress-free bcs
+e = grad_u + trans(grad_u)
+
+viscous_terms = div(e) - 2/3*grad(trace(grad_u))
+
+visc_tau = div(ez*lift1(τ_u2,-1)+trans(ez*lift1(τ_u2,-1))) - 2/3*grad(trace(ez*lift1(τ_u2,-1)))
+
 trace_e = trace(e)
 Phi = 0.5*trace(e@e) - 1/3*(trace_e*trace_e)
 
@@ -261,30 +268,32 @@ logger.info("NCC expansions:")
 for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
-
 # Υ = ln(ρ), θ = ln(h)
 vars = [Υ1, u, s1, h1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2] #, τ_c1]
-τ_u = lift(τ_u1,-1) + lift(τ_u2,-2)
-τ_s = lift(τ_s1,-1) + lift(τ_s2,-2)
+τ_u1 = lift1(τ_u1,-1)
+τ_s1 = lift1(τ_s1,-1)
 #τ_ρ = τ_c0 #+ lift(τ_c1, -1)
-τ_ρ = h0/scrR*lift1(τ_u2,-1)@ez
+τ_ρ = dist.Field(name='τρ', bases=b) #h0/scrR*lift1(τ_u2,-1)@ez
+
+τ_u = τ_u1 + visc_tau + ez*lift1(τ_s2,-1)
+τ_s = τ_s1 + div(ez*lift1(τ_s2,-1))
 
 problem = de.IVP(vars+taus)
 problem.add_equation((ρ0*(ddt(u)
-                      + grad(h1)
+                      + grad_h
                       - h0*grad(s1)
                       - h1*grad_s0)
                       - scrR*(viscous_terms) # takes ρ -> ρ0
-                      + τ_u,
+                      + τ_u1,
                       -ρ0_g*(u@grad(u))
                       +ρ0_g*h1*grad(s1)
                       ))
-problem.add_equation((h0*(ddt(Υ1) + div(u) + u@grad_Υ0) + τ_ρ,
+problem.add_equation((h0*(ddt(Υ1) + trace(grad_u) + u@grad_Υ0),
                       -h0_g*(u@grad(Υ1)) ))
 problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
-                      - scrP*lap(h1) # takes ρ -> ρ0, h -> h0
-                      + τ_s,
+                      - scrP*div(grad_h) # takes ρ -> ρ0, h -> h0
+                      + τ_s1,
                       - ρ0_h0_g*(u@grad(s1))
                       + scrP*(1/(1+h1*h0_inv_g)-1)*lap(h1) # takes ρ -> ρ0, accounts for h -> h0 LHS
                       + scrR*h0_g/(h1+h0_g)*Phi
@@ -384,9 +393,10 @@ slices.add_task(ω**2, name='enstrophy')
 
 
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
-averages.add_task(x_avg(-κ*grad(h)@ez), name='F_κ(z)')
+averages.add_task(x_avg(-κ*grad(T)@ez), name='F_κ(z)')
 averages.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
 averages.add_task(x_avg(u@ez*ρ*h), name='F_h(z)')
+averages.add_task(x_avg(u@ez*ρ*φ), name='F_PE(z)')
 averages.add_task(grad(s0), name='grad_s0(z)')
 averages.add_task(x_avg(grad(s0+s1)), name='grad_s(z)')
 averages.add_task(s0, name='s0(z)')
