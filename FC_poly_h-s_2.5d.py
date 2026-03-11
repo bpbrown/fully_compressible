@@ -292,7 +292,7 @@ problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
                       - κ/cP*div(grad_h) # takes ρ -> ρ0, h -> h0
                       + τ_s,
                       - ρ0_h0_g*(u@grad(s1))
-                      + κ/cP*np.expm1(-Υ1)*(h0_g/(h0_g+h1)-1)*lap(h1) # accounts for h -> h0, ρ -> ρ0 LHS
+                      + κ/cP*(np.exp(-Υ1)*(h0_g/(h0_g+h1))-1)*lap(h1) # accounts for h -> h0, ρ -> ρ0 LHS
                       + μ*np.exp(-Υ1)*h0_g/(h1+h0_g)*Phi # takes full ρ
                       ))
 #EOS, cP absorbed into s.
