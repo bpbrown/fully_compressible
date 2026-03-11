@@ -300,7 +300,7 @@ problem.add_equation((cV*ρ0*(ddt(T1) + u@grad_T0)
                       + τ_s,
                       - cV*ρ0_g*(u@grad(T1))
                       - ρ0_g*T1*div(u)
-                      + μ*Phi
+                      + μ*Phi # takes ρ -> ρ0
                       ))
 # boundary conditions
 problem.add_equation((T1(z=0), 0))
@@ -396,13 +396,13 @@ slices.add_task(θ1, name='θ')
 slices.add_task(ω@ey, name='vorticity')
 slices.add_task(ω**2, name='enstrophy')
 
-
+f_ρ = (ρ/ρ0)
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
-averages.add_task(x_avg(-κ*grad(T)@ez), name='F_κ(z)')
+averages.add_task(x_avg(-f_ρ*κ*grad(T)@ez), name='F_κ(z)')
 averages.add_task(x_avg(0.5*ρ*u@ez*u@u), name='F_KE(z)')
 averages.add_task(x_avg(u@ez*ρ*h), name='F_h(z)')
 averages.add_task(x_avg(u@ez*ρ*φ), name='F_PE(z)')
-averages.add_task(x_avg(-μ*2*(u@Eij-u*1/3*div(u))@ez), name='F_μ(z)')
+averages.add_task(x_avg(-f_ρ*μ*2*(u@Eij-u*1/3*div(u))@ez), name='F_μ(z)')
 averages.add_task(grad(s0), name='grad_s0(z)')
 averages.add_task(x_avg(grad(s0+s1)), name='grad_s(z)')
 averages.add_task(s0, name='s0(z)')
