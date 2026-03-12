@@ -264,7 +264,7 @@ if rank ==0:
 
 
 logger.info("NCC expansions:")
-for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
+for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0, h0*grad_Υ0, h0*grad_θ0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 # Υ = ln(ρ), θ = ln(h)
@@ -298,14 +298,14 @@ problem.add_equation((ρ0*(ddt(u)
                       ))
 problem.add_equation((h0*(ddt(Υ1) + trace(grad_u) + u@grad_Υ0),
                       - h0_g*(u@grad(Υ1)) ))
-problem.add_equation((ρ0*(ddt(s1) + u@grad_s0)
-                      - κ/cP*div(grad_θ) # takes ρ -> ρ0
-                      - κ/cP*2*grad_θ0@grad_θ # takes ρ -> ρ0
+problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
+                      - κ/cP*h0*div(grad_θ) # takes ρ -> ρ0
+                      - κ/cP*2*h0*grad_θ0@grad_θ # takes ρ -> ρ0
                       + τ_s,
-                      - ρ0_g*(u@grad(s1))
-                      + κ/cP*(lap(θ1) + 2*grad_θ0_g@grad(θ1))*np.expm1(-Υ1) # accounts for ρ -> ρ0 LHS
-                      + κ/cP*(grad(θ1)@grad(θ1))*np.exp(-Υ1)
-                      + μ*np.exp(-Υ1)*h0_inv_g*np.exp(-θ1)*Phi # takes full ρ
+                      - ρ0_h0_g*(u@grad(s1))
+                      + κ/cP*h0_g*(lap(θ1) + 2*grad_θ0_g@grad(θ1))*np.expm1(-Υ1) # accounts for ρ -> ρ0 LHS
+                      + κ/cP*h0_g*(grad(θ1)@grad(θ1))*np.exp(-Υ1)
+                      + μ*np.exp(-Υ1)*np.exp(-θ1)*Phi # takes full ρ
                       ))
 #EOS, cP absorbed into s.
 problem.add_equation(((γ-1)*Υ1 + γ*s1 - θ1, 0))
