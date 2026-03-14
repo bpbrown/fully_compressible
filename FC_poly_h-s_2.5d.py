@@ -20,6 +20,7 @@ Options:
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 64]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=aspect*nz
+    --Legendre                           Use Legendre rather than Chebyshev
 
     --run_time=<run_time>                Run time, in hours [default: 23.5]
     --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
@@ -31,6 +32,8 @@ Options:
 
     --no-slip                            Apply no-slip boundary conditions
     --mixed                              Apply mixed no-slip (bottom)/stress-free (top) boundary conditions
+
+    --fixed_entropy                      Fix entropy rather than enthalpy at boundaries
 
     --label=<label>                      Additional label for run output directory
 """
@@ -102,8 +105,12 @@ data_dir = sys.argv[0].split('.py')[0]
 data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
 data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
 data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
+if args['--Legendre']:
+    data_dir += '_Legendre'
 if args['--whole_sun']:
     data_dir += '_wholesun'
+if args['--fixed_entropy']:
+    data_dir += '_fix-s'
 if args['--label']:
     data_dir += '_{:s}'.format(args['--label'])
 
@@ -144,7 +151,10 @@ dealias = 3/2
 coords = de.CartesianCoordinates('y', 'x', 'z', right_handed=False)
 dist = de.Distributor(coords, mesh=[1,nproc], dtype=dtype)
 xb = de.RealFourier(coords['x'], size=nx, bounds=(0, Lx), dealias=dealias)
-zb = de.ChebyshevT(coords['z'],  size=nz, bounds=(0, Lz), dealias=dealias)
+if args['--Legendre']:
+    zb = de.Legendre(coords['z'],  size=nz, bounds=(0, Lz), dealias=dealias)
+else:
+    zb = de.ChebyshevT(coords['z'],  size=nz, bounds=(0, Lz), dealias=dealias)
 b = (xb, zb)
 x = dist.local_grid(xb)
 z = dist.local_grid(zb)
@@ -209,17 +219,9 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 ρ0_grad_h0_g = de.Grid(ρ0*grad(h0)).evaluate()
 ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
 
-# it's a polytrope, so the zero state is in thermal equilibrium.
-# θ0_RHS = dist.Field(name='θ0_RHS', bases=b)
-# θ0.change_scales(1)
-# θ0_RHS.require_grid_space()
-# if θ0['g'].size > 0:
-#     θ0_RHS['g'] = θ0['g']
-
-
+# first order formulation
 grad_h = grad(h1) + ez*lift1(τ_s2,-1)
 grad_u = grad(u)  + ez*lift1(τ_u2,-1)
-
 
 # stress-free bcs
 Eij = 0.5*(grad_u + trans(grad_u))
@@ -298,8 +300,12 @@ problem.add_equation((h0*ρ0*(ddt(s1) + u@grad_s0)
 #EOS, cP absorbed into s.
 problem.add_equation((h0*((γ-1)*Υ1 + γ*s1)-h1, h0_g*np.log(h1*h0_inv_g+1)-h1))
 # boundary conditions
-problem.add_equation((h1(z=0), 0))
-problem.add_equation((h1(z=Lz), 0))
+if args['--fixed_entropy']:
+    problem.add_equation((s1(z=0), 0))
+    problem.add_equation((s1(z=Lz), 0))
+else:
+    problem.add_equation((h1(z=0), 0))
+    problem.add_equation((h1(z=Lz), 0))
 if no_slip:
     logger.info("applying no-slip boundary conditions")
     problem.add_equation((u(z=0), 0))
@@ -397,6 +403,7 @@ averages.add_task(grad(s0), name='grad_s0(z)')
 averages.add_task(x_avg(grad(s0+s1)), name='grad_s(z)')
 averages.add_task(s0, name='s0(z)')
 averages.add_task(x_avg(s0+s1), name='s(z)')
+averages.add_task(x_avg(ρ), name='ρ(z)')
 averages.add_task(x_avg(ω**2), name='enstrophy(z)')
 averages.add_task(x_avg(Re), name='Re(z)')
 averages.add_task(x_avg(Ma), name='Ma(z)')
@@ -408,6 +415,7 @@ scalars.add_task(avg(PE), name='PE')
 scalars.add_task(avg(Re), name='Re')
 scalars.add_task(avg(Ma), name='Ma')
 scalars.add_task(avg(ω**2), name='enstrophy')
+scalars.add_task(x_avg(Υ0+Υ1)(z=0)-x_avg(Υ0+Υ1)(z=Lz), name='n_ρ')
 scalars.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 scalars.add_task(np.sqrt(avg(τ_s**2)), name='τ_s')
 scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
@@ -435,9 +443,11 @@ while solver.proceed and good_solution:
         Re_avg = flow.grid_average('Re')
         Ma_avg = flow.grid_average('Ma')
         Re_max = flow.max('Re')
-        τu_max = flow.max('|τ_u|')
-        τs_max = flow.max('|τ_s|')
-        τ_max = np.max([τu_max,τs_max])
+        # τu_max = flow.max('|τ_u|')
+        # τs_max = flow.max('|τ_s|')
+        τu_mean = flow.grid_average('|τ_u|')
+        τs_mean = flow.grid_average('|τ_s|')
+        τ_max = np.max([τu_mean,τs_mean])
         log_string = 'Iteration: {:5d}, Time: {:8.3e} ({:.1e}), dt: {:5.1e}'.format(solver.iteration, solver.sim_time, solver.sim_time*scrR, Δt)
         log_string += ', KE: {:.2g}, IE: {:.2g}, PE: {:.2g}, Re: {:.1g}, Ma: {:.1g}'.format(KE_avg, IE_avg, PE_avg, Re_avg, Ma_avg)
         log_string += ', τ: {:.2g}'.format(τ_max)
@@ -449,7 +459,7 @@ if not good_solution:
     logger.info("simulation terminated with good_solution = {}".format(good_solution))
     logger.info("Δt = {}".format(Δt))
     logger.info("KE = {}".format(KE_avg))
-    logger.info("τu = {}".format((τu_max,τs_max)))
+    logger.info("τu = {}".format((τu_mean,τs_mean)))
 
 logger.info("data in: {}".format(data_dir))
 solver.log_stats()
