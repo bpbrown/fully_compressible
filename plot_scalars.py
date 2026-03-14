@@ -82,7 +82,7 @@ ax.legend(loc='lower left')
 fig_E.savefig('{:s}/energies_fluctuating.png'.format(str(output_path)), dpi=300)
 
 
-fig_tau, ax_tau = plt.subplots(nrows=2)
+fig_tau, ax_tau = plt.subplots(nrows=2, sharex=True)
 for i in [0,1]:
     ax_tau[i].plot(t, data['τ_u'], label=r'$\tau_{u}$')
     ax_tau[i].plot(t, data['τ_s'], label=r'$\tau_{s}$')
@@ -96,6 +96,16 @@ for ax in ax_tau:
     ax.legend(loc='lower left')
 ax_tau[1].set_yscale('log')
 fig_tau.savefig('{:s}/tau_error.png'.format(str(output_path)), dpi=300)
+
+fig, ax = plt.subplots()
+ax.plot(t, data['n_ρ'], label=r'$n_\rho$')
+if subrange:
+    ax.set_xlim(t_min,t_max)
+ax.set_xlabel('time')
+ax.set_ylabel('scale heights')
+ax.legend(loc='lower left')
+fig.savefig('{:s}/atmosphere_scale_heights.png'.format(str(output_path)), dpi=300)
+
 
 benchmark_set = ['KE', 'IE', 'PE', 'Re', 'Ma']
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
