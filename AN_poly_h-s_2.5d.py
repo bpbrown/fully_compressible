@@ -216,7 +216,7 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 
 # first order formulation
 grad_s = grad(s1) + ez*lift1(τ_s2,-1)
-grad_h = grad(h1)
+grad_h = grad(h1) + ez*lift1(τ_s2,-1)
 grad_u = grad(u)  + ez*lift1(τ_u2,-1)
 
 # stress-free bcs
@@ -268,7 +268,7 @@ vars = [u, s1, h1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2, τ_c0]
 τ_u = lift1(τ_u1,-1)
 τ_s = lift1(τ_s1,-1)
-τ_ρ = lift1(τ_c0,-1)
+τ_ρ = τ_c0 #lift1(τ_c0,-1)
 
 #τ_u = τ_u1 + visc_tau + ez*lift1(τ_s2,-1)
 #τ_s = τ_s1 + div(ez*lift1(τ_s2,-1))
@@ -282,12 +282,20 @@ problem.add_equation((ρ0*(ddt(u)
                       - ρ0_g*(u@grad(u))
                       ))
 problem.add_equation((h0*(trace(grad_u) + u@grad_Υ0) + τ_ρ, 0 ))
-problem.add_equation((ρ0*(ddt(s1) + u@grad_s0)
-                      - κ/cP*div(grad_s) # takes ρ -> ρ0, h -> h0
+problem.add_equation((ρ0*h0*(ddt(s1) + u@grad_s0)
+                      - κ/cP*div(grad_h) # takes ρ -> ρ0, h -> h0
                       + τ_s,
-                      - ρ0_g*(u@grad(s1))
-                      + μ*h0_inv_g*Phi
+                      - ρ0_h0_g*(u@grad(s1))
+                      + μ*Phi
                       ))
+# problem.add_equation((ρ0*(ddt(s1) + u@grad_s0)
+#                       - κ/cP*div(grad_s) # takes ρ -> ρ0, h -> h0
+#                       + τ_s,
+#                       - ρ0_g*(u@grad(s1))
+#                       + μ*h0_inv_g*Phi
+#                       ))
+
+
 # boundary conditions
 problem.add_equation((s1(z=0), 0))
 problem.add_equation((s1(z=Lz), 0))
@@ -398,7 +406,8 @@ scalars.add_task(avg(ω**2), name='enstrophy')
 scalars.add_task(Υ0(z=0)-Υ0(z=Lz), name='n_ρ')
 scalars.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 scalars.add_task(np.sqrt(avg(τ_s**2)), name='τ_s')
-scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
+#scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
+scalars.add_task(np.sqrt(τ_ρ**2), name='τ_ρ')
 
 report_cadence = 100
 good_solution = True
