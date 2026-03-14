@@ -160,6 +160,7 @@ z = dist.local_grid(zb)
 θ1 = dist.Field(name='θ1', bases=b)
 h1 = dist.Field(name='h1', bases=b)
 s1 = dist.Field(name='s1', bases=b)
+𝜛1 = dist.Field(name='𝜛1', bases=b)
 u = dist.VectorField(coords, name='u', bases=b)
 
 # Taus
@@ -182,6 +183,7 @@ grad = lambda A: de.Gradient(A, coords)
 curl = lambda A: de.Curl(A)
 trace = lambda A: de.Trace(A)
 trans = lambda A: de.TransposeComponents(A)
+cross = lambda A, B: de.cross(A, B)
 
 integ = lambda A: de.Integrate(A)
 avg = lambda A: integ(A)/(Lx*Lz)
@@ -264,7 +266,7 @@ for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 # Υ = ln(ρ), θ = ln(h)
-vars = [u, s1, h1]
+vars = [u, s1, h1, 𝜛1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2, τ_c0]
 τ_u = lift1(τ_u1,-1)
 τ_s = lift1(τ_s1,-1)
@@ -272,15 +274,17 @@ taus = [τ_u1, τ_u2, τ_s1, τ_s2, τ_c0]
 
 #τ_u = τ_u1 + visc_tau + ez*lift1(τ_s2,-1)
 #τ_s = τ_s1 + div(ez*lift1(τ_s2,-1))
+ω = curl(u)
 
 problem = de.IVP(vars+taus)
 problem.add_equation((ρ0*(ddt(u)
-                      + grad_h
+                      + grad(𝜛1)
                       - h0*grad(s1))
                       - μ*(viscous_terms) # takes ρ -> ρ0
                       + τ_u,
-                      - ρ0_g*(u@grad(u))
+                        ρ0_g*(cross(u, ω))
                       ))
+problem.add_equation((𝜛1 - h1, 0.5*(u@u)))
 problem.add_equation((h0*(trace(grad_u) + u@grad_Υ0) + τ_ρ, 0 ))
 problem.add_equation((ρ0*h0*(ddt(s1) + u@grad_s0)
                       - κ/cP*div(grad_h) # takes ρ -> ρ0, h -> h0
@@ -366,7 +370,7 @@ IE = 1/γ*ρ*h
 PE = ρ*φ
 Re = (ρ/μ)*np.sqrt(u@u)
 Ma = np.sqrt(u@u/(γ*T))
-ω = curl(u)
+#ω = curl(u)
 
 
 slice_dt = 0.5/np.sqrt(ε)
