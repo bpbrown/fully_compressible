@@ -35,6 +35,8 @@ Options:
 
     --fixed_entropy                      Fix entropy rather than enthalpy at boundaries
 
+    --no_output
+
     --label=<label>                      Additional label for run output directory
 """
 
@@ -102,8 +104,9 @@ else:
 cP = γ/(γ-1)
 
 data_dir = sys.argv[0].split('.py')[0]
-data_dir += "_nh{}_μ{}_Pr{}".format(args['--n_h'], args['--mu'], args['--Prandtl'])
-data_dir += "_{}_a{}".format(strat_label, args['--aspect'])
+data_dir += "_nh{}_{}".format(args['--n_h'], strat_label)
+data_dir += "_μ{}_Pr{}".format(args['--mu'], args['--Prandtl'])
+data_dir += "_a{}".format(args['--aspect'])
 data_dir += "_nz{:d}_nx{:d}".format(nz,nx)
 if args['--Legendre']:
     data_dir += '_Legendre'
@@ -191,6 +194,7 @@ trans = lambda A: de.TransposeComponents(A)
 integ = lambda A: de.Integrate(A)
 avg = lambda A: integ(A)/(Lx*Lz)
 x_avg = lambda A: de.Integrate(A, 'x')/(Lx)
+integ_z = lambda A: de.Integrate(A, 'z')
 
 ey, ex, ez = coords.unit_vector_fields(dist)
 
@@ -219,30 +223,33 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 ρ0_grad_h0_g = de.Grid(ρ0*grad(h0)).evaluate()
 ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
 
-# first order formulation
-grad_h = grad(h1) + ez*lift1(τ_s2,-1)
-grad_u = grad(u)  + ez*lift1(τ_u2,-1)
-
-# stress-free bcs
-Eij = 0.5*(grad_u + trans(grad_u))
-
-viscous_terms = 2*div(Eij) - 2/3*grad(trace(Eij))
-
-Phi = 2*(trace(Eij@Eij) - 1/3*(trace(Eij)*trace(Eij)))
-
 Ma2 = 1 #ε
 Pr = 1 # (μ cP)/κ
 
 scrR = float(args['--mu']) # scrR is 1/Re = (μ/ρ_c)/(u_c L)
 scrP = scrR/Prandtl # Mihalas & Mihalas eq (28.3), scrP is 1/Pe
 
+μ = scrR
+κ = (μ*cP)/Pr
+
+# first order formulation
+grad_h = grad(h1) + ez*lift1(τ_s2,-1)
+grad_u = grad(u)  + ez*lift1(τ_u2,-1)
+
+# stress-free bcs
+Eij = 0.5*(grad_u + trans(grad(u)))
+Eij_RHS = 0.5*(grad(u) + trans(grad(u)))
+
+viscous_terms = 2*div(Eij) - 2/3*grad(trace(Eij))
+
+viscous_terms_RHS = 2*div(Eij_RHS) - 2/3*grad(trace(Eij_RHS))
+Phi = 2*(trace(Eij_RHS@Eij_RHS) - 1/3*(trace(Eij_RHS)*trace(Eij_RHS)))
+
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
 delta_s = s_bot-s_top
 g = m+1 # maybe right, maybe not
-μ = scrR
-κ = (μ*cP)/Pr
 pre = g*(delta_s)*Lz**3 # oof...
 Ra_bot = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=0)).evaluate()['g']
 Ra_mid = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
@@ -286,7 +293,7 @@ problem.add_equation((ρ0*(ddt(u)
                       + τ_u,
                       - ρ0_g*(u@grad(u))
                       + ρ0_g*(h1*grad(s1))
-                      + μ*np.expm1(-Υ1)*(viscous_terms) # accounts for LHS ρ -> ρ0
+                      + μ*np.expm1(-Υ1)*(viscous_terms_RHS) # accounts for LHS ρ -> ρ0
                       ))
 problem.add_equation((h0*(ddt(Υ1) + trace(grad_u) + u@grad_Υ0),
                       - h0_g*(u@grad(Υ1)) ))
@@ -381,15 +388,20 @@ Ma = np.sqrt(u@u/(γ*T))
 ω = curl(u)
 
 
-slice_dt = 0.5/np.sqrt(ε)
+slice_dt = 1/np.sqrt(ε)
 scalar_dt = slice_dt/5
+
+Δt_out = dist.Field(name='Δt_out')
+
+if args['--no_output']:
+    slice_dt = scalar_dt = np.inf
 
 slices = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
 slices.add_task(s, name='s')
-slices.add_task(s-x_avg(s), name='s_fluc')
-slices.add_task(θ1, name='θ')
+#slices.add_task(s-x_avg(s), name='s_fluc')
+#slices.add_task(θ1, name='θ')
 slices.add_task(ω@ey, name='vorticity')
-slices.add_task(ω**2, name='enstrophy')
+#slices.add_task(ω**2, name='enstrophy')
 
 f_ρ = (ρ0/ρ)
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
@@ -419,6 +431,9 @@ scalars.add_task(x_avg(Υ0+Υ1)(z=0)-x_avg(Υ0+Υ1)(z=Lz), name='n_ρ')
 scalars.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 scalars.add_task(np.sqrt(avg(τ_s**2)), name='τ_s')
 scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
+scalars.add_task(Δt_out, name='Δt')
+scalars.add_task(integ(ρ)/Lx, name='column density')
+
 
 report_cadence = 100
 good_solution = True
@@ -435,6 +450,7 @@ flow.add_property(np.sqrt(τ_s**2),  name='|τ_s|')
 KE_avg = 0
 while solver.proceed and good_solution:
     # advance
+    Δt_out['g'] = Δt
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
         KE_avg = flow.grid_average('KE')
