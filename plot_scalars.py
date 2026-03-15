@@ -58,6 +58,7 @@ labels = labels_l + labels_r
 ax.legend(handles,labels)
 fig.savefig('{:s}/fluid_properties.png'.format(str(output_path)), dpi=300)
 
+
 energy_keys = ['KE','IE','PE']
 fig_E, ax_E = plt.subplots()
 for key in energy_keys:
@@ -82,32 +83,52 @@ ax.legend(loc='lower left')
 fig_E.savefig('{:s}/energies_fluctuating.png'.format(str(output_path)), dpi=300)
 
 
-fig_tau, ax_tau = plt.subplots(nrows=2, sharex=True)
+fig_tau, ax_tau = plt.subplots(nrows=2, sharex=True, figsize=(4.5,2*4/1.5))
+fig_tau.subplots_adjust(top=0.95, right=0.85, bottom=0.1, left=0.2)
+
 for i in [0,1]:
     ax_tau[i].plot(t, data['τ_u'], label=r'$\tau_{u}$')
     ax_tau[i].plot(t, data['τ_s'], label=r'$\tau_{s}$')
     ax_tau[i].plot(t, data['τ_ρ'], label=r'$\tau_{\rho}$')
+if 'τ_u2' in data:
+    for i in [0,1]:
+        ax_tau[i].plot(t, data['τ_u2'], label=r'$\tau_{u2}$')
+        ax_tau[i].plot(t, data['τ_s2'], label=r'$\tau_{s2}$')
+ax_r = ax_tau[0].twinx()
+ax_r.plot(t, data['Δt'], color='black')
+ax_r.set_ylabel(r'$\Delta t$')
+ax_r = ax_tau[1].twinx()
+ax_r.plot(t, data['Δt'], color='black')
+ax_r.set_ylabel(r'$\Delta t$')
+ax_r.set_yscale('log')
 
 for ax in ax_tau:
     if subrange:
         ax.set_xlim(t_min,t_max)
     ax.set_xlabel('time')
     ax.set_ylabel(r'$L_\inf(\tau)$')
-    ax.legend(loc='lower left')
+    ax.legend()
 ax_tau[1].set_yscale('log')
 fig_tau.savefig('{:s}/tau_error.png'.format(str(output_path)), dpi=300)
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(4.5,4/1.5))
+fig.subplots_adjust(top=0.9, right=0.8, bottom=0.2, left=0.2)
 ax.plot(t, data['n_ρ'], label=r'$n_\rho$')
+if 'column density' in data:
+    ax_r = ax.twinx()
+    ax_r.plot(t, data['column density'], color='black', label='mass')
+    ax_r.set_ylabel(r'$\int \rho$')
 if subrange:
     ax.set_xlim(t_min,t_max)
 ax.set_xlabel('time')
 ax.set_ylabel('scale heights')
-ax.legend(loc='lower left')
+ax.legend(loc='upper right')
 fig.savefig('{:s}/atmosphere_scale_heights.png'.format(str(output_path)), dpi=300)
 
 
 benchmark_set = ['KE', 'IE', 'PE', 'Re', 'Ma']
+if 'τ_u2' in data:
+    benchmark_set += ['τ_u','τ_u2','τ_s','τ_s2']
 i_ten = int(0.9*data[benchmark_set[0]].shape[0])
 for benchmark in benchmark_set:
     print("{:s} = {:14.12g} +- {:4.2g} (averaged from {:g}-{:g})".format(benchmark, np.mean(data[benchmark][i_ten:]), np.std(data[benchmark][i_ten:]), t[i_ten], t[-1]))
