@@ -33,6 +33,8 @@ Options:
     --no-slip                            Apply no-slip boundary conditions
     --mixed                              Apply mixed no-slip (bottom)/stress-free (top) boundary conditions
 
+    --no_output
+
     --label=<label>                      Additional label for run output directory
 """
 
@@ -216,31 +218,33 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 ρ0_grad_h0_g = de.Grid(ρ0*grad(h0)).evaluate()
 ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
 
-# first order formulation
-grad_s = grad(s1) + ez*lift1(τ_s2,-1)
-grad_h = grad(h1) + ez*lift1(τ_s2,-1)
-grad_u = grad(u)  + ez*lift1(τ_u2,-1)
-
-# stress-free bcs
-Eij = 0.5*(grad_u + trans(grad_u))
-
-viscous_terms = 2*div(Eij) - 2/3*grad(trace(Eij))
-
-Phi = 2*(trace(Eij@Eij) - 1/3*(trace(Eij)*trace(Eij)))
-
 Ma2 = 1 #ε
 Pr = 1 # (μ cP)/κ
 
 scrR = float(args['--mu']) # scrR is 1/Re = (μ/ρ_c)/(u_c L)
 scrP = scrR/Prandtl # Mihalas & Mihalas eq (28.3), scrP is 1/Pe
 
+μ = scrR
+κ = (μ*cP)/Pr
+
+# first order formulation
+grad_s = grad(s1) + ez*lift1(τ_s2,-1)
+grad_h = grad(h1) + (1/κ)*ez*lift1(τ_s2,-1)
+grad_u = grad(u)  + (1/μ)*ez*lift1(τ_u2,-1)
+
+# stress-free bcs
+Eij = 0.5*(grad_u + trans(grad(u)))
+Eij_RHS = 0.5*(grad(u) + trans(grad(u)))
+
+viscous_terms = 2*div(Eij) - 2/3*grad(trace(Eij))
+
+Phi = 2*(trace(Eij_RHS@Eij_RHS) - 1/3*(trace(Eij_RHS)*trace(Eij_RHS)))
+
 s_bot = s0(z=0).evaluate()['g']
 s_top = s0(z=Lz).evaluate()['g']
 
 delta_s = s_bot-s_top
 g = m+1 # maybe right, maybe not
-μ = scrR
-κ = (μ*cP)/Pr
 pre = g*(delta_s)*Lz**3 # oof...
 Ra_bot = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=0)).evaluate()['g']
 Ra_mid = pre*(1/(μ*κ)*np.exp(2*Υ0)(z=Lz/2)).evaluate()['g']
@@ -270,10 +274,10 @@ vars = [u, s1, h1, 𝜛1]
 taus = [τ_u1, τ_u2, τ_s1, τ_s2, τ_c0]
 τ_u = lift1(τ_u1,-1)
 τ_s = lift1(τ_s1,-1)
-τ_ρ = τ_c0 #lift1(τ_c0,-1)
+τ_ρ = τ_c0
 
-#τ_u = τ_u1 + visc_tau + ez*lift1(τ_s2,-1)
-#τ_s = τ_s1 + div(ez*lift1(τ_s2,-1))
+τ_u2_diag = div(ez*lift1(τ_u2,-1)+trans(ez*lift1(τ_u2,-1))) - 2/3*grad(trace(ez*lift1(τ_u2,-1)))
+τ_s2_diag = div(ez*lift1(τ_s2,-1))
 ω = curl(u)
 
 problem = de.IVP(vars+taus)
@@ -282,9 +286,9 @@ problem.add_equation((ρ0*(ddt(u)
                       - h0*grad(s1))
                       - μ*(viscous_terms) # takes ρ -> ρ0
                       + τ_u,
-                        ρ0_g*(cross(u, ω))
+                        -ρ0_g*(2*u@Eij_RHS)
                       ))
-problem.add_equation((𝜛1 - h1, 0.5*(u@u)))
+problem.add_equation((𝜛1 - h1, -0.5*(u@u)))
 problem.add_equation((h0*(trace(grad_u) + u@grad_Υ0) + τ_ρ, 0 ))
 problem.add_equation((ρ0*h0*(ddt(s1) + u@grad_s0)
                       - κ/cP*div(grad_h) # takes ρ -> ρ0, h -> h0
@@ -292,13 +296,6 @@ problem.add_equation((ρ0*h0*(ddt(s1) + u@grad_s0)
                       - ρ0_h0_g*(u@grad(s1))
                       + μ*Phi
                       ))
-# problem.add_equation((ρ0*(ddt(s1) + u@grad_s0)
-#                       - κ/cP*div(grad_s) # takes ρ -> ρ0, h -> h0
-#                       + τ_s,
-#                       - ρ0_g*(u@grad(s1))
-#                       + μ*h0_inv_g*Phi
-#                       ))
-
 
 # boundary conditions
 problem.add_equation((s1(z=0), 0))
@@ -372,16 +369,20 @@ Re = (ρ/μ)*np.sqrt(u@u)
 Ma = np.sqrt(u@u/(γ*T))
 #ω = curl(u)
 
-
-slice_dt = 0.5/np.sqrt(ε)
+slice_dt = 1/np.sqrt(ε)
 scalar_dt = slice_dt/5
+
+Δt_out = dist.Field(name='Δt_out')
+
+if args['--no_output']:
+    slice_dt = scalar_dt = np.inf
 
 slices = solver.evaluator.add_file_handler(data_dir+'/slices',sim_dt=slice_dt,max_writes=20)
 slices.add_task(s, name='s')
-slices.add_task(s-x_avg(s), name='s_fluc')
-slices.add_task(θ1, name='θ')
+#slices.add_task(s-x_avg(s), name='s_fluc')
+#slices.add_task(θ1, name='θ')
 slices.add_task(ω@ey, name='vorticity')
-slices.add_task(ω**2, name='enstrophy')
+#slices.add_task(ω**2, name='enstrophy')
 
 f_ρ = (ρ0/ρ)
 averages = solver.evaluator.add_file_handler(data_dir+'/averages', sim_dt=slice_dt, max_writes=None)
@@ -410,8 +411,11 @@ scalars.add_task(avg(ω**2), name='enstrophy')
 scalars.add_task(Υ0(z=0)-Υ0(z=Lz), name='n_ρ')
 scalars.add_task(np.sqrt(avg(τ_u@τ_u)), name='τ_u')
 scalars.add_task(np.sqrt(avg(τ_s**2)), name='τ_s')
+scalars.add_task(np.sqrt(avg(τ_u2_diag@τ_u2_diag)), name='τ_u2')
+scalars.add_task(np.sqrt(avg(τ_s2_diag**2)), name='τ_s2')
 #scalars.add_task(np.sqrt(avg(τ_ρ**2)), name='τ_ρ')
 scalars.add_task(np.sqrt(τ_ρ**2), name='τ_ρ')
+scalars.add_task(Δt_out, name='Δt')
 
 report_cadence = 100
 good_solution = True
@@ -428,6 +432,7 @@ flow.add_property(np.sqrt(τ_s**2),  name='|τ_s|')
 KE_avg = 0
 while solver.proceed and good_solution:
     # advance
+    Δt_out['g'] = Δt
     solver.step(Δt)
     if solver.iteration % report_cadence == 0:
         KE_avg = flow.grid_average('KE')
