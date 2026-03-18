@@ -86,8 +86,11 @@ def time_avg(f, axis=0):
     n_avg = f.shape[axis]
     return np.squeeze(np.sum(f, axis=axis))/n_avg
 
+n_ρ = time_avg(data['n_ρ(z)'])
+n_ρ0 = time_avg(data['n_ρ0(z)'])
 s_avg = time_avg(data['s(z)'])
 s0_avg = time_avg(data['s0(z)'])
+
 fig_s, ax_s = plt.subplots(figsize=(4.5,4/1.5))
 fig_s.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
 for si in data['s(z)']:
@@ -96,6 +99,15 @@ ax_s.plot(z, s_avg, linewidth=1.5, color='black')
 ax_s.plot(z, s0_avg, linewidth=1, color='black', linestyle='dashed')
 fig_s.savefig('{:s}/thermal_profile.png'.format(str(output_path)), dpi=300)
 
+fig_s, ax_s = plt.subplots(figsize=(4.5,4/1.5))
+fig_s.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
+for si in data['s(z)']:
+    ax_s.plot(n_ρ0, si, alpha=0.3)
+ax_s.plot(n_ρ0, s_avg, linewidth=1.5, color='black')
+ax_s.plot(n_ρ0, s0_avg, linewidth=1, color='black', linestyle='dashed')
+ax_s.set_xlabel(r'$n_{\rho}(z)$')
+fig_s.savefig('{:s}/thermal_profile_vs_Hrho.png'.format(str(output_path)), dpi=300)
+print(n_ρ0)
 Ma_avg = time_avg(data['Ma(z)'])
 Re_avg = time_avg(data['Re(z)'])
 
@@ -150,3 +162,17 @@ ax.legend()
 ax.set_ylabel(r'Flux')
 ax.set_xlabel(r'$z$')
 fig.savefig('{:s}/flux_balance_fluc.png'.format(str(output_path)), dpi=300)
+
+
+fig, ax = plt.subplots(figsize=(4.5,4/1.5))
+fig.subplots_adjust(top=0.9, right=0.95, bottom=0.2, left=0.15)
+ax.plot(n_ρ0, F_tot-F_top, color='black', label=r'$F_\mathrm{tot}$', linewidth=3)
+ax.plot(n_ρ0, F_h, label=r'$F_\mathrm{h}$')
+ax.plot(n_ρ0, F_KE, label=r'$F_\mathrm{KE}$')
+ax.plot(n_ρ0, F_PE, label=r'$F_\mathrm{PE}$')
+ax.plot(n_ρ0, F_κ-F_top, label=r'$F_\kappa$')
+ax.plot(n_ρ0, F_μ, label=r'$F_\mu$')
+ax.legend()
+ax.set_ylabel(r'Flux')
+ax.set_xlabel(r'$n_{\rho}(z)$')
+fig.savefig('{:s}/flux_balance_fluc_vs_Hrho.png'.format(str(output_path)), dpi=300)
