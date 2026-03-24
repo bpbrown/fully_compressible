@@ -6,7 +6,7 @@ Usage:
 
 Options:
     --output=<dir>     Output directory; defaults to 'frames' subdir within the case dir
-    --tasks=<tasks>    Tasks to plot [default: s,s_fluc,vorticity]
+    --tasks=<tasks>    Tasks to plot [default: s,vorticity]
 """
 
 import h5py
@@ -48,7 +48,13 @@ def main(filename, start, count, tasks, output):
                 time = t[k]
                 fig, ax = plt.subplots(1, figsize=figsize)
                 ax.set_aspect(1)
-                pcm = ax.pcolormesh(x, z, data[data_slice].T, shading='nearest',cmap=cmap)
+                # cut data at top and bottom 5% for colorbar
+                sort_data = np.sort(data[data_slice], axis=None) # over represents boundary regions w/ Chebyshev
+                data_cut = 0.05
+                vmin = sort_data[int(data_cut*sort_data.size)]
+                vmax = sort_data[int((1-data_cut)*sort_data.size)]
+
+                pcm = ax.pcolormesh(x, z, data[data_slice].T, shading='nearest',cmap=cmap, vmin=vmin, vmax=vmax)
                 pmin,pmax = pcm.get_clim()
                 if title == 'vorticity':
                     cmap = 'PiYG'
