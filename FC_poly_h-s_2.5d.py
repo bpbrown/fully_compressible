@@ -30,6 +30,8 @@ Options:
 
     --whole_sun
 
+    --reference_point=reference_point    Reference point for density, temperature [default: top]
+
     --no-slip                            Apply no-slip boundary conditions
     --mixed                              Apply mixed no-slip (bottom)/stress-free (top) boundary conditions
 
@@ -126,7 +128,7 @@ from dedalus.extras import flow_tools
 logger.info(args)
 logger.info("saving data in: {}".format(data_dir))
 
-reference_point='top'
+reference_point=args['--reference_point']
 if args['--whole_sun']:
     theta = 10
     h_bot = theta+1
@@ -141,6 +143,8 @@ else:
     elif reference_point == "bot":
         h_bot = 1
         h_top = np.exp(-n_h)
+    else:
+        raise ValueError(f'reference_point={reference_point} not currently supported')
     grad_φ = (1+m)*(γ-1)/γ
     Lz = -1/h_slope*(h_bot-h_top)
 
@@ -224,7 +228,6 @@ h0_grad_s0_g = de.Grid(h0*grad(s0)).evaluate()
 ρ0_h0_grad_s0_g = de.Grid(ρ0*h0*grad(s0)).evaluate()
 
 Ma2 = 1 #ε
-Pr = 1 # (μ cP)/κ
 
 scrR = float(args['--mu']) # scrR is 1/Re = (μ/ρ_c)/(u_c L)
 scrP = scrR/Prandtl # Mihalas & Mihalas eq (28.3), scrP is 1/Pe
@@ -271,7 +274,7 @@ if rank ==0:
 
 
 logger.info("NCC expansions:")
-for ncc in [ρ0, ρ0*grad_h0, ρ0*h0, ρ0*h0*grad_s0, h0*grad_θ0, h0*grad_Υ0]:
+for ncc in [ρ0, ρ0*grad_s0, h0*grad_Υ0, ρ0*h0, ρ0*h0*grad_s0, h0]:
     logger.info("{}: {}".format(ncc.evaluate(), np.where(np.abs(ncc.evaluate()['c']) >= ncc_cutoff)[0].shape))
 
 # Υ = ln(ρ), θ = ln(h)
